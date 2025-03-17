@@ -1,5 +1,5 @@
 {
-  "extends": ["stylelint-config-standard-scss"],
+  "extends": ["stylelint-config-standard-scss", "stylelint-config-standard"],
   "rules": {
     "custom-property-pattern": null,
     "selector-class-pattern": null,
@@ -24,5 +24,11 @@
         "ignorePseudoClasses": ["global"]
       }
     ]
-  }
+  },
+  "overrides": [
+    {
+      "files": ["*.css"],
+      "customSyntax": "postcss-scss"
+    }
+  ]
 }

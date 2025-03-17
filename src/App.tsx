@@ -1,13 +1,17 @@
-import { Container, MantineProvider } from '@mantine/core';
+import { MantineProvider } from '@mantine/core';
 
+import '@mantine/core/styles.css';
+
+import { BrowserRouter } from 'react-router';
+import Routes from './routes';
 import { theme } from './themes';
 
 function App() {
   return (
     <MantineProvider theme={theme}>
-      <Container>
-        <h1>Hello, Mantine!</h1>
-      </Container>
+      <BrowserRouter>
+        <Routes />
+      </BrowserRouter>
     </MantineProvider>
   );
 }

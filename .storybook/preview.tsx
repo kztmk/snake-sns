@@ -4,6 +4,7 @@ import '@mantine/core/styles.css';
 
 import React, { useEffect } from 'react';
 import { addons } from '@storybook/preview-api';
+import { MemoryRouter } from 'react-router';
 import { DARK_MODE_EVENT_NAME } from 'storybook-dark-mode';
 import { MantineProvider, useMantineColorScheme } from '@mantine/core';
 // theme.ts file from previous step
@@ -26,4 +27,9 @@ function ColorSchemeWrapper({ children }: { children: React.ReactNode }) {
 export const decorators = [
   (renderStory: any) => <ColorSchemeWrapper>{renderStory()}</ColorSchemeWrapper>,
   (renderStory: any) => <MantineProvider theme={theme}>{renderStory()}</MantineProvider>,
+  (Story: any) => (
+    <MemoryRouter initialEntries={['/']}>
+      <Story />
+    </MemoryRouter>
+  ),
 ];
