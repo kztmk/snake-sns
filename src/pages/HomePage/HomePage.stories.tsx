@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react';
-import { HomePage } from './index';
+import HomePage from './index';
 
 // メタデータの定義
 const meta = {
