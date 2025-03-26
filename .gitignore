@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 
 *storybook.log
+
+# dotenv environment variable files
+.env
+.env.development
+.env.test.local
+.env.production
+.env.local

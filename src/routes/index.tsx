@@ -2,9 +2,8 @@
 import { lazy } from 'react';
 import { useRoutes } from 'react-router';
 import GuestPageLayout from '../layouts/Guest';
-
-// import MainRoutes from './MainRoutes';
-// import SignInRoutes from './SignInRoutes';
+import MainRoutes from './MainRoutes';
+import SignInRoutes from './SignInRoutes';
 
 const PagesLanding = lazy(() => import('@/pages/HomePage'));
 const NotFound = lazy(() => import('@/pages/NotFound404'));
@@ -21,6 +20,8 @@ const ThemeRoutes = () => {
         },
       ],
     },
+    MainRoutes,
+    SignInRoutes,
     {
       path: '*',
       element: <GuestPageLayout />,
