@@ -16,7 +16,7 @@ const AuthGuard = ({ children }: GuardProps) => {
     console.log('AuthGuard', user?.uid, location.pathname);
     if (!user?.uid) {
       console.log('navigate to login');
-      navigate('login', {
+      navigate('signin', {
         state: {
           from: location.pathname,
         },

@@ -7,16 +7,16 @@ export default function PasswordResetSuccessPage() {
       <Paper shadow="md" p="xl" radius="md" withBorder>
         <Stack gap="lg">
           <Title order={1} ta="center">
-            Sent password reset mail successfully
+            パスワードリセットメールを送信しました。
           </Title>
 
           <Text size="md" ta="center">
-            Sent password reset mail. Please check your mailbox.
+            メールボックスを確認し、パスワードリセットの手順に従ってください。迷惑メールフォルダもご確認ください。
           </Text>
 
           <Center>
             <Button component={Link} to="/signin" variant="subtle" color="blue">
-              Back to Sign in
+              サインインページに戻る
             </Button>
           </Center>
         </Stack>

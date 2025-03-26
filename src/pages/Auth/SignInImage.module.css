@@ -21,3 +21,14 @@
     Greycliff CF,
     var(--mantine-font-family);
 }
+.linkText {
+  color: light-dark(var(--mantine-color-blue-6), var(--mantine-color-blue-4));
+  cursor: pointer;
+  transition: color 0.2s ease;
+  font-weight: 700;
+}
+
+.linkText:hover {
+  color: light-dark(var(--mantine-color-blue-8), var(--mantine-color-blue-3));
+  text-decoration: underline;
+}

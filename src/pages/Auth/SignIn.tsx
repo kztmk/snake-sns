@@ -1,9 +1,10 @@
 import { useEffect } from 'react';
 import { z } from 'zod';
+import { useNavigate } from 'react-router';
 import {
-  Anchor,
   Button,
   Checkbox,
+  LoadingOverlay,
   Paper,
   PasswordInput,
   Text,
@@ -11,6 +12,11 @@ import {
   Title,
 } from '@mantine/core';
 import { useForm, zodResolver } from '@mantine/form';
+import { notifications } from '@mantine/notifications';
+import { IconExclamationCircle } from '@tabler/icons-react';
+
+import { signIn } from '@/store/reducers/authSlice';
+import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks'
 import classes from './SignInImage.module.css';
 
 // Define zod schema for validation
@@ -24,6 +30,10 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export default function SignIn() {
+  const { loading, error, user } = useAppSelector((state) => state.auth);
+  const dispatch = useAppDispatch();
+
+  const navigate = useNavigate();
   // Initialize form with zod resolver
   const form = useForm<FormValues>({
     initialValues: {
@@ -45,10 +55,24 @@ export default function SignIn() {
     }
   }, []);
 
+  // watch for error
+  useEffect(() => {
+    if (error) {
+        notifications.show({
+          title: 'サインインエラー',
+          message: error,
+          color: 'red',
+          autoClose: 5000,
+          withCloseButton: true,
+          icon: <IconExclamationCircle size={16} />,
+        })
+    }
+  }, [loading, error, dispatch]);
+
   // Form submission handler
   const handleSubmit = (values: FormValues) => {
-    console.log(values);
-    // Save sign information to local storage
+    // Sign in the user
+    dispatch(signIn(values));
     if (values.rememberMe) {
       localStorage.setItem('signinInfo', JSON.stringify(values));
     } else {
@@ -59,6 +83,7 @@ export default function SignIn() {
   return (
     <div className={classes.wrapper}>
       <Paper className={classes.form} radius={0} p={30}>
+        <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ radius: "sm", blur:2}} />
         <Title order={2} className={classes.title} ta="center" mt="md" mb={50}>
           SnS-Snakeへサインイン
         </Title>
@@ -92,9 +117,9 @@ export default function SignIn() {
 
         <Text ta="center" mt="md">
           パスワードを忘れた場合{' '}
-          <Anchor<'a'> href="#" fw={700} onClick={(event) => event.preventDefault()}>
-            Register
-          </Anchor>
+          <Text component="a" className={classes.linkText} onClick={() => navigate('/forgot-password')}>
+            パスワードをリセット
+          </Text>
         </Text>
       </Paper>
     </div>

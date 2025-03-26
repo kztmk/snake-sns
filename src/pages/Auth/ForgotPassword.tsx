@@ -11,16 +11,23 @@ import {
   TextInput,
   Title,
 } from '@mantine/core';
-import { isEmail, useForm } from '@mantine/form';
+import { isEmail, isNotEmpty, useForm } from '@mantine/form';
+import { useNavigate } from 'react-router';
 import classes from './ForgotPassword.module.css';
 
 export default function ForgotPassword() {
+  const navigate = useNavigate();
   const form = useForm({
     initialValues: {
       email: '',
     },
     validate: {
-      email: isEmail('Invalid email format'),
+      email: (value) => {
+        if (!value) {
+          return 'メールアドレスを入力してください';
+        }
+        return isNotEmpty('メールアドレスを入力してください。')(value) || isEmail('不正なメールアドレスです')(value);
+      },
     },
   });
 
@@ -32,29 +39,29 @@ export default function ForgotPassword() {
   return (
     <Container size={460} my={30}>
       <Title className={classes.title} ta="center">
-        Forgot your password?
+        パスワードを忘れましたか？
       </Title>
       <Text c="dimmed" fz="sm" ta="center">
-        Enter your email to get a reset link
+        登録したメールアドレスを入力してください。パスワードリセットの手順をお送りします
       </Text>
 
       <Paper withBorder shadow="md" p={30} radius="md" mt="xl">
         <form onSubmit={form.onSubmit(handleSubmit)}>
           <TextInput
-            label="Your email"
-            placeholder="me@mantine.dev"
-            required
+            label="登録メールアドレス"
+            placeholder="rest@imakita3gyo.com"
             {...form.getInputProps('email')}
+            error={form.errors.email}
           />
           <Group justify="space-between" mt="lg" className={classes.controls}>
-            <Anchor c="dimmed" size="sm" className={classes.control}>
+            <Text size="sm" className={`${classes.control} ${classes.linkText}`} onClick={() => navigate('/signin')}>
               <Center inline>
-                <IconArrowLeft size={12} stroke={1.5} />
-                <Box ml={5}>Back to the login page</Box>
+          <IconArrowLeft size={12} stroke={1.5} />
+          <Box ml={5}>サインインページに戻る</Box>
               </Center>
-            </Anchor>
-            <Button type="submit" className={classes.control}>
-              Reset password
+            </Text>
+            <Button type="submit" className={classes.control} onClick={() => navigate('/reset-password')}>
+              パスワードのリセット
             </Button>
           </Group>
         </form>

@@ -24,7 +24,7 @@ const SignInRoutes = {
       ),
       children: [
         {
-          path: 'login',
+          path: 'signin',
           element: <AuthSignin />,
         },
         {
