@@ -58,16 +58,18 @@ export default function SignIn() {
   // watch for error
   useEffect(() => {
     if (error) {
-        notifications.show({
-          title: 'サインインエラー',
-          message: error,
-          color: 'red',
-          autoClose: 5000,
-          withCloseButton: true,
-          icon: <IconExclamationCircle size={16} />,
-        })
+      console.log('error', error);
+      notifications.show({
+        title: 'サインインエラー',
+        message: error,
+        color: 'red',
+        position: 'top-center',
+        autoClose: 5000,
+        withCloseButton: true,
+        icon: <IconExclamationCircle size={16} />,
+      });
     }
-  }, [loading, error, dispatch]);
+  }, [error]);
 
   // Form submission handler
   const handleSubmit = (values: FormValues) => {

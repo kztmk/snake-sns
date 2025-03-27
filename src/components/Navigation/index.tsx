@@ -53,7 +53,7 @@ const mockdata = [
   {
     title: 'Apps',
     links: [
-      { label: 'Profile', icon: IconUserCircle, link: '#' },
+      { label: 'Profile', icon: IconUserCircle, link: '/dashboard/x-accounts' },
       { label: 'Settings', icon: IconUserCode, link: '#' },
       { label: 'Chat', icon: IconMessages, link: '#' },
       { label: 'Projects', icon: IconBriefcase, link: '#' },
