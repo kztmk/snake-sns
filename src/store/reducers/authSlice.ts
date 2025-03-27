@@ -11,6 +11,8 @@ import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
 import firebaseApp from '../../firebase';
 import type { RootState } from '../index';
 
+import { translateFirebaseAuthError } from '@/utils/firebaseUtils';
+
 const auth = getAuth(firebaseApp);
 const database = getDatabase(firebaseApp);
 const storage = getStorage(firebaseApp);
@@ -152,7 +154,8 @@ export const signIn = createAsyncThunk<
     return appUser;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
-    return thunkApi.rejectWithValue(error.message);
+    const errorMessage = translateFirebaseAuthError(error);
+    return thunkApi.rejectWithValue(errorMessage);
   }
 });
 
@@ -223,6 +226,7 @@ const authSlice = createSlice({
   extraReducers: (builder) => {
     builder.addCase(signIn.pending, (state) => {
       state.loading = true;
+      state.error = null;
     });
     builder.addCase(signIn.fulfilled, (state, action) => {
       const user = action.payload;
