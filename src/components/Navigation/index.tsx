@@ -1,7 +1,4 @@
 import { useEffect } from 'react';
-
-import { ActionIcon, Box, Flex, Group, ScrollArea, Text } from '@mantine/core';
-import { useMediaQuery } from '@mantine/hooks';
 import {
   IconBook2,
   IconBrandAuth0,
@@ -27,14 +24,13 @@ import {
   IconUserShield,
   IconX,
 } from '@tabler/icons-react';
-
-import { SidebarState } from '@/layouts/MainLayout/Sidebar/SidebarState';
-import { Logo} from '@/components';
-import UserProfileButton from '@/components/UserProfileButton';
+import { ActionIcon, Box, Flex, Group, ScrollArea, Text } from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
+import { Logo } from '@/components';
 import { LinksGroup } from '@/components/Navigation/Links/';
+import UserProfileButton from '@/components/UserProfileButton';
+import { SidebarState } from '@/layouts/MainLayout/Sidebar/SidebarState';
 import UserProfileData from '../data/UserProfile.json';
-
-
 import classes from './Navigation.module.css';
 
 const mockdata = [
@@ -54,7 +50,7 @@ const mockdata = [
     title: 'Apps',
     links: [
       { label: 'Profile', icon: IconUserCircle, link: '/dashboard/x-accounts' },
-      { label: 'Settings', icon: IconUserCode, link: '#' },
+      { label: 'Settings', icon: IconUserCode, link: '/profile' },
       { label: 'Chat', icon: IconMessages, link: '#' },
       { label: 'Projects', icon: IconBriefcase, link: '#' },
       { label: 'Orders', icon: IconListDetails, link: '#' },
@@ -131,24 +127,13 @@ type NavigationProps = {
   onSidebarStateChange: (state: SidebarState) => void;
 };
 
-const Navigation = ({
-  onClose,
-  onSidebarStateChange,
-  sidebarState,
-}: NavigationProps) => {
+const Navigation = ({ onClose, onSidebarStateChange, sidebarState }: NavigationProps) => {
   const tablet_match = useMediaQuery('(max-width: 768px)');
 
   const links = mockdata.map((m) => (
     <Box key={m.title} pl={0} mb={sidebarState === 'mini' ? 0 : 'md'}>
       {sidebarState !== 'mini' && (
-        <Text
-          tt="uppercase"
-          size="xs"
-          pl="md"
-          fw={500}
-          mb="sm"
-          className={classes.linkHeader}
-        >
+        <Text tt="uppercase" size="xs" pl="md" fw={500} mb="sm" className={classes.linkHeader}>
           {m.title}
         </Text>
       )}

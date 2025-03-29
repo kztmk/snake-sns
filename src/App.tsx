@@ -1,14 +1,15 @@
 import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
+
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
+import '@mantine/dropzone/styles.css';
 
+import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router';
 import Routes from './routes';
-import { theme } from './themes';
-import { Provider } from 'react-redux';
 import store from './store';
-
+import { theme } from './themes';
 
 function App() {
   return (

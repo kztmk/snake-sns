@@ -8,10 +8,9 @@ import {
 } from 'firebase/auth';
 import { ref as dbRef, get, getDatabase, set } from 'firebase/database';
 import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
+import { translateFirebaseAuthError } from '@/utils/firebaseUtils';
 import firebaseApp from '../../firebase';
 import type { RootState } from '../index';
-
-import { translateFirebaseAuthError } from '@/utils/firebaseUtils';
 
 const auth = getAuth(firebaseApp);
 const database = getDatabase(firebaseApp);
@@ -65,6 +64,7 @@ export interface AppUser {
   amazonSecretKey?: string;
   dmmAffiliateId?: string;
   dmmApiId?: string;
+  googleSheetUrl?: string;
 }
 
 export interface AppAuth {
@@ -91,6 +91,7 @@ const initialState: AppAuth = {
     amazonSecretKey: '',
     dmmAffiliateId: '',
     dmmApiId: '',
+    googleSheetUrl: '',
   },
   loading: false,
   error: null,
@@ -149,6 +150,7 @@ export const signIn = createAsyncThunk<
       appUser.amazonSecretKey = data.amazonSecretKey ?? '';
       appUser.dmmAffiliateId = data.dmmAffiliateId ?? '';
       appUser.dmmApiId = data.dmmApiId ?? '';
+      appUser.googleSheetUrl = data.googleSheetUrl ?? '';
     }
 
     return appUser;
@@ -166,6 +168,7 @@ export const affiliateKeySave = createAsyncThunk<
     amazonSecretKey: string;
     dmmAffiliateId: string;
     dmmApiId: string;
+    googleSheetUrl: string;
   },
   { keyInfo: [string, string][] },
   { state: RootState; rejectValue: string }
@@ -185,6 +188,7 @@ export const affiliateKeySave = createAsyncThunk<
         chatGptApiKey: appUser.chatGptApiKey,
         geminiApiKey: appUser.geminiApiKey,
         anthropicApiKey: appUser.anthropicApiKey,
+        googleSheetUrl: appUser.googleSheetUrl ?? '',
         ...newValues,
       };
       await set(settingsRef, userSettings);
@@ -194,6 +198,7 @@ export const affiliateKeySave = createAsyncThunk<
         amazonSecretKey: userSettings.amazonSecretKey ?? '',
         dmmAffiliateId: userSettings.dmmAffiliateId ?? '',
         dmmApiId: userSettings.dmmApiId ?? '',
+        googleSheetUrl: userSettings.googleSheetUrl ?? '',
       };
     }
     return {
@@ -202,6 +207,7 @@ export const affiliateKeySave = createAsyncThunk<
       amazonSecretKey: '',
       dmmAffiliateId: '',
       dmmApiId: '',
+      googleSheetUrl: '',
     };
   } catch (error: any) {
     return thunkApi.rejectWithValue(error.message);
@@ -558,8 +564,8 @@ export const signOut = createAsyncThunk<void, void, { state: RootState }>(
 );
 
 export const saveApiKeys = createAsyncThunk<
-  { chatGptApiKey: string; geminiApiKey: string; anthropicApiKey: string },
-  { chatGptApiKey: string; geminiApiKey: string; anthropicApiKey: string },
+  { chatGptApiKey: string; geminiApiKey: string; anthropicApiKey: string; googleSheetUrl: string },
+  { chatGptApiKey: string; geminiApiKey: string; anthropicApiKey: string; googleSheetUrl: string },
   { state: RootState }
 >('auth/saveApiKeys', async (args, thunkApi) => {
   try {
@@ -570,14 +576,16 @@ export const saveApiKeys = createAsyncThunk<
         chatGptApiKey: args.chatGptApiKey,
         geminiApiKey: args.geminiApiKey,
         anthropicApiKey: args.anthropicApiKey,
+        googleSheetUrl: args.googleSheetUrl,
       });
       return {
         chatGptApiKey: args.chatGptApiKey,
         geminiApiKey: args.geminiApiKey,
         anthropicApiKey: args.anthropicApiKey,
+        googleSheetUrl: args.googleSheetUrl,
       };
     }
-    return { chatGptApiKey: '', geminiApiKey: '', anthropicApiKey: '' };
+    return { chatGptApiKey: '', geminiApiKey: '', anthropicApiKey: '', googleSheetUrl: '' };
   } catch (error: any) {
     return thunkApi.rejectWithValue(error.message);
   }

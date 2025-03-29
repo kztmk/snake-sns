@@ -1,30 +1,34 @@
+import path from 'path';
+import { child } from 'firebase/database';
 import { MainLayout } from '@/layouts/MainLayout';
 import Dashboard from '@/pages/Dashboard';
-import AuthGuard  from '@/utils/route-guard/AuthGuard';
-import { child } from 'firebase/database';
-import path from 'path';
+import ProfilePage from '@/pages/Profile';
+import XAccountsList from '@/pages/XAccoutsList';
+import AuthGuard from '@/utils/route-guard/AuthGuard';
 
-import XAccountsList from '@/pages/XAccoutsList'
+const MainRoutes = {
+  path: '/',
+  element: (
+    <AuthGuard>
+      <MainLayout />
+    </AuthGuard>
+  ),
+  children: [
+    {
+      path: '/dashboard',
+      element: <Dashboard />,
 
-const MainRoutes =  {
-    path: '/',
-    element: (
-        <AuthGuard>
-            <MainLayout />
-        </AuthGuard>
-    ),
-    children: [
+      children: [
         {
-            path: '/dashboard',
-            element: <Dashboard />,
-        
-        children: [
-            {
-                path: 'x-accounts',
-                element: <XAccountsList />,
-            }
-        ],
+          path: 'x-accounts',
+          element: <XAccountsList />,
+        },
+      ],
     },
-    ],
+    {
+      path: 'profile',
+      element: <ProfilePage />,
+    },
+  ],
 };
 export default MainRoutes;
