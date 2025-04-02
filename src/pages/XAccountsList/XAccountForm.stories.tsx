@@ -1,11 +1,10 @@
-import type { Meta, StoryObj } from '@storybook/react';
-import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
+import type { Meta, StoryObj } from '@storybook/react';
 import { MRT_Row, MRT_TableInstance } from 'mantine-react-table';
-
-import XAccountForm from './XAccountForm';
-import xAccountsReducer from '@/store/reducers/xAccoutsSlice';
+import { Provider } from 'react-redux';
+import xAccountsReducer from '@/store/reducers/xAccountsSlice';
 import { XAccount } from '@/types/xAccounts';
+import XAccountForm from './XAccountForm';
 
 // Mockデータ
 const mockXAccount: XAccount = {
@@ -15,7 +14,7 @@ const mockXAccount: XAccount = {
   apiSecret: 'api_secret_example',
   accessToken: 'access_token_example',
   accessTokenSecret: 'access_token_secret_example',
-  note: 'テスト用アカウント'
+  note: 'テスト用アカウント',
 };
 
 // モック関数
@@ -43,7 +42,8 @@ const createMockStore = () => {
     preloadedState: {
       xAccounts: {
         xAccountList: [], // accountsからxAccountListに修正
-        xAccount: {       // xAccountプロパティを追加
+        xAccount: {
+          // xAccountプロパティを追加
           id: '',
           name: '',
           apiKey: '',
@@ -52,7 +52,7 @@ const createMockStore = () => {
           accessTokenSecret: '',
           note: '',
         },
-        process: 'idle',  // nullから'idle'に修正
+        process: 'idle', // nullから'idle'に修正
         isLoading: false,
         isError: false,
         errorMessage: '',
