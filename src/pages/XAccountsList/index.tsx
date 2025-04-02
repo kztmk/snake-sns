@@ -26,7 +26,7 @@ import {
   deleteXAccount,
   fetchXAccounts,
   updateXAccount,
-} from '@/store/reducers/xAccoutsSlice';
+} from '@/store/reducers/xAccountsSlice';
 import type { XAccount } from '@/types/xAccounts';
 import { columns } from './XAccountColumn';
 import XAccountForm from './XAccountForm';

@@ -1,10 +1,9 @@
+import { configureStore } from '@reduxjs/toolkit';
 import type { Meta, StoryObj } from '@storybook/react';
 import { Provider } from 'react-redux';
-import { configureStore } from '@reduxjs/toolkit';
-
-import XAccountsListTable from './index';
-import xAccountsReducer from '@/store/reducers/xAccoutsSlice';
+import xAccountsReducer from '@/store/reducers/xAccountsSlice';
 import { XAccount } from '@/types/xAccounts';
+import XAccountsListTable from './index';
 
 // モック用のXAccountデータ
 const mockXAccounts: XAccount[] = [
@@ -15,7 +14,7 @@ const mockXAccounts: XAccount[] = [
     apiSecret: 'api_secret_example_1',
     accessToken: 'access_token_example_1',
     accessTokenSecret: 'access_token_secret_example_1',
-    note: 'テスト用アカウント1'
+    note: 'テスト用アカウント1',
   },
   {
     id: 'account2',
@@ -24,7 +23,7 @@ const mockXAccounts: XAccount[] = [
     apiSecret: 'api_secret_example_2',
     accessToken: 'access_token_example_2',
     accessTokenSecret: 'access_token_secret_example_2',
-    note: 'テスト用アカウント2'
+    note: 'テスト用アカウント2',
   },
   {
     id: 'account3',
@@ -33,8 +32,8 @@ const mockXAccounts: XAccount[] = [
     apiSecret: 'api_secret_example_3',
     accessToken: 'access_token_example_3',
     accessTokenSecret: 'access_token_secret_example_3',
-    note: 'テスト用アカウント3（長めの説明文をここに入れてテキストの折り返しやセルサイズの調整などの挙動を確認します。アカウント管理画面の表示テスト用データです。）'
-  }
+    note: 'テスト用アカウント3（長めの説明文をここに入れてテキストの折り返しやセルサイズの調整などの挙動を確認します。アカウント管理画面の表示テスト用データです。）',
+  },
 ];
 
 // 空のXAccountデータ
@@ -45,7 +44,7 @@ const emptyXAccount: XAccount = {
   apiSecret: '',
   accessToken: '',
   accessTokenSecret: '',
-  note: ''
+  note: '',
 };
 
 /**
@@ -56,7 +55,7 @@ const emptyXAccount: XAccount = {
 const createMockStore = (customXAccounts: XAccount[] = mockXAccounts) => {
   return configureStore({
     reducer: {
-      xAccounts: xAccountsReducer
+      xAccounts: xAccountsReducer,
     },
     preloadedState: {
       xAccounts: {
@@ -65,9 +64,9 @@ const createMockStore = (customXAccounts: XAccount[] = mockXAccounts) => {
         process: 'idle',
         isLoading: false,
         isError: false,
-        errorMessage: ''
-      }
-    }
+        errorMessage: '',
+      },
+    },
   });
 };
 
@@ -85,9 +84,9 @@ const meta = {
           <Story />
         </div>
       </Provider>
-    )
+    ),
   ],
-  tags: ['autodocs']
+  tags: ['autodocs'],
 } satisfies Meta<typeof XAccountsListTable>;
 
 export default meta;
@@ -105,58 +104,62 @@ export const EmptyTable: Story = {
           <Story />
         </div>
       </Provider>
-    )
-  ]
+    ),
+  ],
 };
 
 // 読み込み中の状態
 export const Loading: Story = {
   decorators: [
     (Story) => (
-      <Provider store={configureStore({
-        reducer: { xAccounts: xAccountsReducer },
-        preloadedState: {
-          xAccounts: {
-            xAccountList: [],
-            xAccount: emptyXAccount,
-            process: 'idle',
-            isLoading: true,
-            isError: false,
-            errorMessage: ''
-          }
-        }
-      })}>
+      <Provider
+        store={configureStore({
+          reducer: { xAccounts: xAccountsReducer },
+          preloadedState: {
+            xAccounts: {
+              xAccountList: [],
+              xAccount: emptyXAccount,
+              process: 'idle',
+              isLoading: true,
+              isError: false,
+              errorMessage: '',
+            },
+          },
+        })}
+      >
         <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
           <Story />
         </div>
       </Provider>
-    )
-  ]
+    ),
+  ],
 };
 
 // エラー状態
 export const Error: Story = {
   decorators: [
     (Story) => (
-      <Provider store={configureStore({
-        reducer: { xAccounts: xAccountsReducer },
-        preloadedState: {
-          xAccounts: {
-            xAccountList: [],
-            xAccount: emptyXAccount,
-            process: 'idle',
-            isLoading: false,
-            isError: true,
-            errorMessage: 'データの取得に失敗しました'
-          }
-        }
-      })}>
+      <Provider
+        store={configureStore({
+          reducer: { xAccounts: xAccountsReducer },
+          preloadedState: {
+            xAccounts: {
+              xAccountList: [],
+              xAccount: emptyXAccount,
+              process: 'idle',
+              isLoading: false,
+              isError: true,
+              errorMessage: 'データの取得に失敗しました',
+            },
+          },
+        })}
+      >
         <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
           <Story />
         </div>
       </Provider>
-    )
-  ]
+    ),
+  ],
 };
 
 // 多数のデータがある状態
@@ -171,9 +174,9 @@ export const ManyRecords: Story = {
         apiSecret: `api_secret_example_${i + 1}`,
         accessToken: `access_token_example_${i + 1}`,
         accessTokenSecret: `access_token_secret_example_${i + 1}`,
-        note: `テスト用アカウント${i + 1}`
+        note: `テスト用アカウント${i + 1}`,
       }));
-      
+
       return (
         <Provider store={createMockStore(manyAccounts)}>
           <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
@@ -181,6 +184,6 @@ export const ManyRecords: Story = {
           </div>
         </Provider>
       );
-    }
-  ]
+    },
+  ],
 };
