@@ -3,7 +3,8 @@ import { child } from 'firebase/database';
 import { MainLayout } from '@/layouts/MainLayout';
 import Dashboard from '@/pages/Dashboard';
 import ProfilePage from '@/pages/Profile';
-import XAccountsList from '@/pages/XAccoutsList';
+import XAccountsList from '@/pages/XAccountsList';
+import XPostsList from '@/pages/XPostsList';
 import AuthGuard from '@/utils/route-guard/AuthGuard';
 
 const MainRoutes = {
@@ -22,6 +23,10 @@ const MainRoutes = {
         {
           path: 'x-accounts',
           element: <XAccountsList />,
+        },
+        {
+          path: 'x-accounts/:xAccountId',
+          element: <XPostsList />,
         },
       ],
     },
