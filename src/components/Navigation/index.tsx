@@ -99,14 +99,14 @@ type NavigationProps = {
 const Navigation = ({ onClose, onSidebarStateChange, sidebarState }: NavigationProps) => {
   const tablet_match = useMediaQuery('(max-width: 768px)');
 
-  const xAcounts = useAppSelector((state) => state.xAccounts.xAccountList);
+  const xAccounts = useAppSelector((state) => state.xAccounts.xAccountList);
   const user = useAppSelector((state) => state.auth.user);
 
   const xAccountLinks = {
     label: 'X',
     icon: IconBrandX,
     link: '/dashboard/x-accounts',
-    links: xAcounts.map((xAccount: XAccount) => ({
+    links: xAccounts.map((xAccount: XAccount) => ({
       label: `@${xAccount.id}`,
       icon: IconBrandXdeep,
       link: `/dashboard/x-accounts/${xAccount.id}`,

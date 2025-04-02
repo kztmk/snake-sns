@@ -1,8 +1,10 @@
 import { Box, Center, Group, RingProgress } from '@mantine/core';
 
+const X_POST_TEXTLENGTH_LIMIT = 280;
+
 const CircularWithLabel = (props: { value: number; size: number }) => {
   const { value, size, ...others } = props;
-  const percentage = Math.round((value / 280) * 100);
+  const percentage = Math.round((value / X_POST_TEXTLENGTH_LIMIT) * 100);
 
   return (
     <Box style={{ position: 'relative', display: 'inline-flex' }}>
