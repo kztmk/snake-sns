@@ -142,6 +142,7 @@ export const signIn = createAsyncThunk<
     const settingsSnapshot = await get(settingsRef);
     if (settingsSnapshot.exists()) {
       const data = settingsSnapshot.val();
+      console.log(`googleSheetUrl: ${data.googleSheetUrl}`);
       appUser.chatGptApiKey = data.chatGptApiKey ?? '';
       appUser.geminiApiKey = data.geminiApiKey ?? '';
       appUser.anthropicApiKey = data.anthropicApiKey ?? '';
@@ -253,6 +254,7 @@ const authSlice = createSlice({
         amazonSecretKey: user.amazonSecretKey,
         dmmAffiliateId: user.dmmAffiliateId,
         dmmApiId: user.dmmApiId,
+        googleSheetUrl: user.googleSheetUrl,
       };
     });
     builder.addCase(signIn.rejected, (state, action) => {
@@ -354,6 +356,7 @@ const authSlice = createSlice({
         chatGptApiKey: action.payload.chatGptApiKey,
         geminiApiKey: action.payload.geminiApiKey,
         anthropicApiKey: action.payload.anthropicApiKey,
+        googleSheetUrl: action.payload.googleSheetUrl,
       };
     });
     builder.addCase(saveApiKeys.rejected, (state, action) => {

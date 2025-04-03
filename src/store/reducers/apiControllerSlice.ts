@@ -1,6 +1,7 @@
 // createTrigger
 // https://script.google.com/macros/s/AKfycbxi3bvcZ5_vCq6Wp2i4zg8C5DDRkZQTJ1x7y1ChWFaXj8t994G6frS5BZ-DAAv5Sbne/exec?functionName=createTrigger&interval=5
 // https://script.google.com/macros/s/AKfycbzp2GIS-N8bBn7USjP7By75FNN95oN5fPITvJHHlUAnCA_5UJGCeQfVRhceXzvnO4yyBA/exec?action=create&target=postdata
+// https://script.google.com/macros/s/AKfycbzp2GIS-N8bBn7USjP7By75FNN95oN5fPITvJHHlUAnCA_5UJGCeQfVRhceXzvnO4yyBA/exec
 // POST Endpoints
 // The system provides several POST endpoints accessible via doPost():
 
@@ -27,6 +28,7 @@
 import { RootState } from '..';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import axios from 'axios';
+import { boolean } from 'zod';
 
 // APIコントローラーの状態の型定義
 interface ApiControllerState {
@@ -35,7 +37,8 @@ interface ApiControllerState {
   triggerStatus: {
     functionName: string;
     isTriggerConfigured: boolean;
-  } | null;
+    interval: number;
+  };
   uploadedMedia: {
     filename: string;
     fileId: string;
@@ -54,6 +57,7 @@ interface ApiControllerState {
 // トリガー作成のためのパラメータ型
 interface CreateTriggerParams {
   intervalMinutes: number;
+  functionName: string;
 }
 
 // メディアアップロードのためのパラメータ型
@@ -84,100 +88,144 @@ interface ArchiveSheetParams {
 const initialState: ApiControllerState = {
   status: 'idle',
   error: null,
-  triggerStatus: null,
-  uploadedMedia: null,
-  archivedSheet: null,
+  triggerStatus: {
+    functionName: '',
+    isTriggerConfigured: false,
+    interval: -1,
+  },
+  uploadedMedia: {
+    filename: '',
+    fileId: '',
+    webViewLink: '',
+    webContentLink: '',
+  },
+  archivedSheet: {
+    originalName: '',
+    newName: '',
+    archiveFileId: '',
+    archiveFileUrl: '',
+    message: '',
+  },
 };
 
 // トリガー作成のための非同期アクション
-export const createTrigger = createAsyncThunk(
-  'api/createTrigger',
-  async (params: CreateTriggerParams, { getState, rejectWithValue }) => {
-    try {
-      const state = getState() as RootState;
-      const restUrl = state.auth.user?.googleSheetUrl;
-
-      if (!restUrl) {
-        return rejectWithValue('GoogleSheet URL が設定されていません');
-      }
-
-      const response = await axios.post(`${restUrl}?action=create&target=trigger`, {
-        intervalMinutes: params.intervalMinutes,
-      });
-
-      // レスポンスのステータスをチェック
-      if (response.data.status === 'error') {
-        return rejectWithValue(response.data.message || 'トリガーの作成に失敗しました');
-      }
-
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message || error.message || 'トリガーの作成中にエラーが発生しました'
-      );
-    }
+export const createTrigger = createAsyncThunk<
+  {
+    status: string;
+    message: string;
+    intervalMinutes: number;
+    handlerFunction: string;
+    triggerId: string;
+    deletedExistingCount: number;
+  },
+  CreateTriggerParams,
+  {
+    state: RootState;
+    rejectValue: string;
   }
-);
+>('api/createTrigger', async (params: CreateTriggerParams, { getState, rejectWithValue }) => {
+  try {
+    const state = getState() as RootState;
+    const restUrl = state.auth.user?.googleSheetUrl;
+
+    if (!restUrl) {
+      return rejectWithValue('GoogleSheet URL が設定されていません');
+    }
+
+    const response = await axios.post(`${restUrl}?action=create&target=trigger`, {
+      intervalMinutes: params.intervalMinutes,
+    });
+
+    // レスポンスのステータスをチェック
+    if (response.data.status === 'error') {
+      return rejectWithValue(response.data.message || 'トリガーの作成に失敗しました');
+    }
+
+    return response.data;
+  } catch (error: any) {
+    return rejectWithValue(
+      error.response?.data?.message || error.message || 'トリガーの作成中にエラーが発生しました'
+    );
+  }
+});
 
 // トリガー削除のための非同期アクション
-export const deleteTrigger = createAsyncThunk(
-  'api/deleteTrigger',
-  async (_, { getState, rejectWithValue }) => {
-    try {
-      const state = getState() as RootState;
-      const restUrl = state.auth.user?.googleSheetUrl;
-
-      if (!restUrl) {
-        return rejectWithValue('GoogleSheet URL が設定されていません');
-      }
-
-      const response = await axios.post(`${restUrl}?action=delete&target=trigger`, {});
-
-      // レスポンスのステータスをチェック
-      if (response.data.status === 'error') {
-        return rejectWithValue(response.data.message || 'トリガーの削除に失敗しました');
-      }
-
-      return response.data;
-    } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message || error.message || 'トリガーの削除中にエラーが発生しました'
-      );
-    }
+export const deleteTrigger = createAsyncThunk<
+  {
+    status: string;
+    message: string;
+    deletedCount: number;
+  },
+  void,
+  {
+    state: RootState;
+    rejectValue: string;
   }
-);
+>('api/deleteTrigger', async (_, { getState, rejectWithValue }) => {
+  try {
+    const state = getState() as RootState;
+    const restUrl = state.auth.user?.googleSheetUrl;
+
+    if (!restUrl) {
+      return rejectWithValue('GoogleSheet URL が設定されていません');
+    }
+
+    const response = await axios.post(`${restUrl}?action=delete&target=trigger`, {});
+
+    // レスポンスのステータスをチェック
+    if (response.data.status === 'error') {
+      return rejectWithValue(response.data.message || 'トリガーの削除に失敗しました');
+    }
+
+    return response.data;
+  } catch (error: any) {
+    return rejectWithValue(
+      error.response?.data?.message || error.message || 'トリガーの削除中にエラーが発生しました'
+    );
+  }
+});
 
 // トリガーステータス取得のための非同期アクション
-export const getTriggerStatus = createAsyncThunk(
-  'api/getTriggerStatus',
-  async (functionName: string, { getState, rejectWithValue }) => {
-    try {
-      const state = getState() as RootState;
-      const restUrl = state.auth.user?.googleSheetUrl;
-
-      if (!restUrl) {
-        return rejectWithValue('GoogleSheet URL が設定されていません');
-      }
-
-      const response = await axios.get(
-        `${restUrl}?action=status&target=trigger&functionName=${functionName}`
-      );
-
-      // レスポンスのステータスをチェック
-      if (response.data.status === 'error') {
-        return rejectWithValue(response.data.message || 'トリガー情報の取得に失敗しました');
-      }
-
-      return response.data.data;
-    } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          'トリガー情報の取得中にエラーが発生しました'
-      );
-    }
+export const getTriggerStatus = createAsyncThunk<
+  {
+    status: string;
+    functionName: string;
+    triggerFound: boolean;
+    message: string;
+    intervalMinites: number;
+  },
+  {
+    functionName: string;
+  },
+  {
+    state: RootState;
+    rejectValue: string;
   }
-);
+>('api/getTriggerStatus', async (args, { getState, rejectWithValue }) => {
+  try {
+    const state = getState() as RootState;
+    const restUrl = state.auth.user?.googleSheetUrl;
+
+    if (!restUrl) {
+      return rejectWithValue('GoogleSheet URL が設定されていません');
+    }
+
+    const response = await axios.get(
+      `${restUrl}?action=status&target=trigger&functionName=${args.functionName}`
+    );
+
+    // レスポンスのステータスをチェック
+    if (response.data.status === 'error') {
+      return rejectWithValue(response.data.message || 'トリガー情報の取得に失敗しました');
+    }
+
+    return response.data.data;
+  } catch (error: any) {
+    return rejectWithValue(
+      error.response?.data?.message || error.message || 'トリガー情報の取得中にエラーが発生しました'
+    );
+  }
+});
 
 // メディアアップロードのための非同期アクション
 export const uploadMedia = createAsyncThunk(
@@ -239,6 +287,7 @@ export const uploadMedia = createAsyncThunk(
 );
 
 // 複数メディアアップロードのための非同期アクション
+// TODO: 複数ファイルのアップロード　要チェック
 export const uploadMultipleMedia = createAsyncThunk(
   'api/uploadMultipleMedia',
   async (params: UploadMultipleMediaParams, { getState, rejectWithValue }) => {
@@ -366,8 +415,11 @@ const apiControllerSlice = createSlice({
         state.status = 'loading';
         state.error = null;
       })
-      .addCase(createTrigger.fulfilled, (state) => {
+      .addCase(createTrigger.fulfilled, (state, action) => {
         state.status = 'succeeded';
+        state.triggerStatus.functionName = action.payload.handlerFunction;
+        state.triggerStatus.isTriggerConfigured = true;
+        state.triggerStatus.interval = action.payload.intervalMinutes;
         state.error = null;
       })
       .addCase(createTrigger.rejected, (state, action) => {
@@ -382,7 +434,9 @@ const apiControllerSlice = createSlice({
       .addCase(deleteTrigger.fulfilled, (state) => {
         state.status = 'succeeded';
         state.error = null;
-        state.triggerStatus = null; // トリガーを削除したので、ステータスもnullにする
+        state.triggerStatus.functionName = '';
+        state.triggerStatus.interval = -1;
+        state.triggerStatus.isTriggerConfigured = false; // トリガーを削除したので、ステータスもnullにする
       })
       .addCase(deleteTrigger.rejected, (state, action) => {
         state.status = 'failed';
@@ -396,7 +450,9 @@ const apiControllerSlice = createSlice({
       .addCase(getTriggerStatus.fulfilled, (state, action) => {
         state.status = 'succeeded';
         state.error = null;
-        state.triggerStatus = action.payload;
+        state.triggerStatus.functionName = action.payload.functionName;
+        state.triggerStatus.isTriggerConfigured = action.payload.triggerFound;
+        state.triggerStatus.interval = action.payload.intervalMinites;
       })
       .addCase(getTriggerStatus.rejected, (state, action) => {
         state.status = 'failed';
@@ -406,7 +462,6 @@ const apiControllerSlice = createSlice({
       .addCase(uploadMedia.pending, (state) => {
         state.status = 'loading';
         state.error = null;
-        state.uploadedMedia = null;
       })
       .addCase(uploadMedia.fulfilled, (state, action) => {
         state.status = 'succeeded';
@@ -416,7 +471,6 @@ const apiControllerSlice = createSlice({
       .addCase(uploadMedia.rejected, (state, action) => {
         state.status = 'failed';
         state.error = action.payload as string;
-        state.uploadedMedia = null;
       })
       // uploadMultipleMedia
       .addCase(uploadMultipleMedia.pending, (state) => {

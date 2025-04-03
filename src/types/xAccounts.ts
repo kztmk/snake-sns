@@ -40,6 +40,19 @@ export type XPostDataType = {
   inReplyToInternal?: string;
 };
 
+export type XPostedDataType = {
+  id?: string;
+  createdAt?: string;
+  postSchedule?: string | null;
+  postTo?: string;
+  contents?: string;
+  media?: string;
+  inReplyToInternal?: string;
+  postedId?: string;
+  inReplyToOnX?: string;
+  postedAt: string;
+};
+
 export type XPostListFetchStatus = {
   xAccountId: string;
   xPostList: XPostDataType[];

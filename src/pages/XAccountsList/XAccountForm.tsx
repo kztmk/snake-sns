@@ -11,7 +11,10 @@ import { XAccount } from '@/types/xAccounts';
 
 // XAccountフォームのバリデーションスキーマ
 const schema = z.object({
-  name: z.string().min(1, 'アカウント名は必須です'),
+  name: z
+    .string()
+    .min(1, 'アカウント名は必須です')
+    .regex(/^@/, 'アカウント名は@から始めてください'),
   apiKey: z.string().min(1, 'API Keyは必須です'),
   apiSecret: z.string().min(1, 'API Secretは必須です'),
   accessToken: z.string().min(1, 'Access Tokenは必須です'),
