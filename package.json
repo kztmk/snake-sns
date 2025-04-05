@@ -1,5 +1,5 @@
 {
-  "name": "snake-sns",
+  "name": "tra-i",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -21,6 +21,7 @@
     "@mantine/modals": "^7.17.2",
     "@mantine/notifications": "^7.17.2",
     "@mantine/nprogress": "^7.17.2",
+    "@react-oauth/google": "^0.12.1",
     "@reduxjs/toolkit": "^2.6.1",
     "@tabler/icons-react": "^3.31.0",
     "axios": "^1.8.4",

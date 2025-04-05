@@ -1,10 +1,10 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { XPostDataType } from '@/types/xAccounts';
+import { XPostedDataType } from '@/types/xAccounts';
 import type { RootState } from '../index';
 
 interface XPostedState {
-  xPostedList: XPostDataType[];
+  xPostedList: XPostedDataType[];
   isLoading: boolean;
   isError: boolean;
   errorMessage: string;
@@ -21,7 +21,7 @@ const initialState: XPostedState = {
  * X投稿済みデータを取得する
  */
 export const fetchXPosted = createAsyncThunk<
-  XPostDataType[],
+  XPostedDataType[],
   void,
   { state: RootState; rejectValue: string }
 >('xPosted/fetch', async (_, thunkApi) => {

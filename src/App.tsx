@@ -6,22 +6,27 @@ import '@mantine/notifications/styles.css';
 import '@mantine/dropzone/styles.css';
 import '@mantine/dates/styles.css';
 
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router';
 import Routes from './routes';
 import store from './store';
 import { theme } from './themes';
 
+const googleClientId = import.meta.env.VITE_G_OAUTH_CLIENT_ID;
+
 function App() {
   return (
-    <Provider store={store}>
-      <MantineProvider theme={theme}>
-        <Notifications position="top-center" zIndex={100000000} />
-        <BrowserRouter>
-          <Routes />
-        </BrowserRouter>
-      </MantineProvider>
-    </Provider>
+    <GoogleOAuthProvider clientId={googleClientId}>
+      <Provider store={store}>
+        <MantineProvider theme={theme}>
+          <Notifications position="top-center" zIndex={100000000} />
+          <BrowserRouter>
+            <Routes />
+          </BrowserRouter>
+        </MantineProvider>
+      </Provider>
+    </GoogleOAuthProvider>
   );
 }
 

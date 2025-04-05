@@ -1,6 +1,7 @@
 import path from 'path';
 import { child } from 'firebase/database';
 import { MainLayout } from '@/layouts/MainLayout';
+import Activity from '@/pages/Activity';
 import Dashboard from '@/pages/Dashboard';
 import ProfilePage from '@/pages/Profile';
 import XAccountsList from '@/pages/XAccountsList';
@@ -20,6 +21,10 @@ const MainRoutes = {
       element: <Dashboard />,
 
       children: [
+        {
+          path: '',
+          element: <Activity />,
+        },
         {
           path: 'x-accounts',
           element: <XAccountsList />,

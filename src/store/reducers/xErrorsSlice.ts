@@ -4,14 +4,14 @@ import { PostError } from '@/types/xAccounts';
 import type { RootState } from '../index';
 
 interface XErrorsState {
-  xErrorList: PostError[];
+  xErrorsList: PostError[];
   isLoading: boolean;
   isError: boolean;
   errorMessage: string;
 }
 
 const initialState: XErrorsState = {
-  xErrorList: [],
+  xErrorsList: [],
   isLoading: false,
   isError: false,
   errorMessage: '',
@@ -55,7 +55,7 @@ const xErrorsSlice = createSlice({
   initialState,
   reducers: {
     resetXErrorsState: (state) => {
-      state.xErrorList = [];
+      state.xErrorsList = [];
       state.isLoading = false;
       state.isError = false;
       state.errorMessage = '';
@@ -74,7 +74,7 @@ const xErrorsSlice = createSlice({
     });
     builder.addCase(fetchXErrors.fulfilled, (state, action) => {
       state.isLoading = false;
-      state.xErrorList = action.payload;
+      state.xErrorsList = action.payload;
     });
     builder.addCase(fetchXErrors.rejected, (state, action) => {
       state.isLoading = false;

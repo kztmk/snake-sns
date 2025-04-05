@@ -27,7 +27,7 @@ import {
 } from 'mantine-react-table';
 import { MRT_Localization_JA } from 'mantine-react-table/locales/ja/index.cjs';
 import { useParams } from 'react-router';
-import { ActionIcon, Box, Button, Group, Modal, Stack, Text, Tooltip } from '@mantine/core';
+import { ActionIcon, Box, Button, Group, Modal, Paper, Stack, Text, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
@@ -82,7 +82,7 @@ const XPostTable = () => {
   const [openLogsDialog, setOpenLogsDialog] = useState(false);
   // xPosts.xPostListは全アカウントのPOSTデータを持っているので、xAccountIdでフィルタリングして表示する
   const xPostList = useAppSelector((state) => state.xPosts.xPostList).filter(
-    (list) => list.postTo === xAccountId
+    (post) => post.postTo === xAccountId
   );
   const dispatch = useAppDispatch();
 
@@ -97,7 +97,7 @@ const XPostTable = () => {
 
   // モーダル操作後のフィードバック処理
   const handleFeedback = ({ operation, text }: { operation: string; text: string }) => {
-    if (operation === 'created') {
+    if (operation === 'addNew') {
       notifications.show({
         title: 'ポスト作成完了',
         message: `ポスト:"${text}"が正常に作成されました`,
@@ -334,7 +334,8 @@ const XPostTable = () => {
   });
 
   return (
-    <>
+    <Paper p="md" style={{ width: '100%', height: '100%' }}>
+      <Text mb="md">アカウント名:{` @${xAccountId}`}</Text>
       <MantineReactTable table={table} />
       <Modal
         opened={isDeleteModalOpen}
@@ -359,7 +360,7 @@ const XPostTable = () => {
           </Button>
         </Group>
       </Modal>
-    </>
+    </Paper>
   );
 };
 

@@ -5,6 +5,7 @@
 import { combineReducers, configureStore } from '@reduxjs/toolkit';
 import apiController from './reducers/apiControllerSlice';
 import auth from './reducers/authSlice';
+import googleAccessTokenState from './reducers/googleAccessTokenSlice';
 import xAccounts from './reducers/xAccountsSlice';
 import xErrors from './reducers/xErrorsSlice';
 import xPosted from './reducers/xPostedSlice';
@@ -17,7 +18,15 @@ import xPosts from './reducers/xPostsSlice';
  * - xPosts: X投稿データのCRUD管理
  * - xPosted: X投稿済みデータの取得管理
  */
-const rootReducer = combineReducers({ auth, xAccounts, xPosts, xPosted, xErrors, apiController });
+const rootReducer = combineReducers({
+  auth,
+  xAccounts,
+  xPosts,
+  xPosted,
+  xErrors,
+  apiController,
+  googleAccessTokenState,
+});
 export type RootState = ReturnType<typeof rootReducer>;
 
 /**

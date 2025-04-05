@@ -21,10 +21,11 @@ const initialState: XPostListFetchStatus = {
   errorMessage: '',
 };
 
+const PROXY_ENDPOINT = import.meta.env.VITE_PROXY_URL || '/api/gas-proxy';
 // Xポストリスト取得の非同期アクション
 export const fetchXPosts = createAsyncThunk(
   'xPosts/fetchXPosts',
-  async (xAccountId: string, { getState, rejectWithValue }) => {
+  async (_, { getState, rejectWithValue }) => {
     try {
       const state = getState() as RootState;
       const restUrl = state.auth.user?.googleSheetUrl;
@@ -33,15 +34,13 @@ export const fetchXPosts = createAsyncThunk(
         return rejectWithValue('GoogleSheet URL が設定されていません');
       }
 
-      const response = await axios.get(
-        `${restUrl}?action=fetch&target=postData&xAccountId=${xAccountId}`
-      );
+      const response = await axios.get(`${restUrl}?action=fetch&target=postData`);
 
       if (response.data.status === 'error') {
         return rejectWithValue(response.data.message || 'Xポスト一覧の取得に失敗しました');
       }
 
-      return { xAccountId, posts: response.data.data || [] };
+      return { posts: response.data.data || [] };
     } catch (error: any) {
       return rejectWithValue(
         error.response?.data?.message ||
@@ -67,13 +66,22 @@ export const createXPost = createAsyncThunk(
         return rejectWithValue('GoogleSheet URL が設定されていません');
       }
 
+      console.log('xPost', xPost);
       // APIリクエスト用のデータを作成
       const requestData = {
         ...xPost,
-        xAccountId,
       };
 
-      const response = await axios.post(`${restUrl}?action=create&target=postData`, requestData);
+      const response = await axios.post(PROXY_ENDPOINT, requestData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Target-Gas-Url': restUrl,
+        },
+        params: {
+          action: 'create',
+          target: 'postData',
+        },
+      });
 
       if (response.data.status === 'error') {
         return rejectWithValue(response.data.message || 'Xポストの作成に失敗しました');
@@ -109,7 +117,16 @@ export const updateXPost = createAsyncThunk(
         xAccountId,
       };
 
-      const response = await axios.post(`${restUrl}?action=update&target=postData`, requestData);
+      const response = await axios.post(PROXY_ENDPOINT, requestData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Target-Gas-Url': restUrl,
+        },
+        params: {
+          action: 'update',
+          target: 'postData',
+        },
+      });
 
       if (response.data.status === 'error') {
         return rejectWithValue(response.data.message || 'Xポストの更新に失敗しました');
@@ -144,7 +161,16 @@ export const deleteXPost = createAsyncThunk(
         xAccountId,
       };
 
-      const response = await axios.post(`${restUrl}?action=delete&target=postData`, requestData);
+      const response = await axios.post(PROXY_ENDPOINT, requestData, {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Target-Gas-Url': restUrl,
+        },
+        params: {
+          action: 'delete',
+          target: 'postData',
+        },
+      });
 
       if (response.data.status === 'error') {
         return rejectWithValue(response.data.message || 'Xポストの削除に失敗しました');
@@ -188,7 +214,6 @@ const xPostsSlice = createSlice({
       .addCase(fetchXPosts.fulfilled, (state, action) => {
         state.isLoading = false;
         state.isError = false;
-        state.xAccountId = action.payload.xAccountId;
         state.xPostList = action.payload.posts;
         state.process = 'idle';
       })
@@ -209,13 +234,11 @@ const xPostsSlice = createSlice({
         state.isLoading = false;
         state.isError = false;
         state.xPostList.push(action.payload.post);
-        state.process = 'idle';
       })
       .addCase(createXPost.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.errorMessage = action.payload as string;
-        state.process = 'idle';
       })
       // updateXPost
       .addCase(updateXPost.pending, (state) => {
@@ -231,13 +254,11 @@ const xPostsSlice = createSlice({
         if (index !== -1) {
           state.xPostList[index] = action.payload.post;
         }
-        state.process = 'idle';
       })
       .addCase(updateXPost.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.errorMessage = action.payload as string;
-        state.process = 'idle';
       })
       // deleteXPost
       .addCase(deleteXPost.pending, (state) => {
@@ -256,13 +277,11 @@ const xPostsSlice = createSlice({
         } else {
           state.xPostList = state.xPostList.filter((post) => post.id !== action.payload.postId);
         }
-        state.process = 'idle';
       })
       .addCase(deleteXPost.rejected, (state, action) => {
         state.isLoading = false;
         state.isError = true;
         state.errorMessage = action.payload as string;
-        state.process = 'idle';
       });
   },
 });

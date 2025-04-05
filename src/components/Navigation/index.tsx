@@ -54,9 +54,9 @@ type MenuGroup = {
 
 const mainMenu = [
   {
-    title: 'Dashboard',
+    title: 'ダッシュボード',
     links: [
-      { label: 'Default', icon: IconChartBar, link: '#' },
+      { label: 'アクティビティ', icon: IconChartBar, link: '/dashboard' },
       {
         label: 'プロフィール',
         icon: IconUserCircle,
@@ -68,24 +68,24 @@ const mainMenu = [
 
 const docsMenu = [
   {
-    title: 'Documentation',
+    title: 'ドキュメント',
     links: [
       {
-        label: 'About',
+        label: '虎威について',
         icon: IconExclamationCircle,
         link: '#',
       },
       {
-        label: 'Getting started',
+        label: '',
         icon: IconLifebuoy,
         link: '#',
       },
       {
-        label: 'Documentation',
+        label: 'マニュアル',
         icon: IconBook2,
         link: '#',
       },
-      { label: 'Changelog', icon: IconList, link: '#' },
+      { label: '更新状況', icon: IconList, link: '#' },
     ],
   },
 ];

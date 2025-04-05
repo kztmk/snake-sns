@@ -41,6 +41,8 @@ const initialState: XAccountListFetchStatus = {
   errorMessage: '',
 };
 
+export const PROXY_ENDPOINT = import.meta.env.VITE_PROXY_URL || '/api/gas-proxy';
+
 /**
  * XAccountsのReduxスライス
  * REST APIとのCRUD操作を管理
@@ -225,7 +227,16 @@ export const createXAccount = createAsyncThunk<
     };
 
     // POSTリクエストでデータを作成 (action=create, target=xauth)
-    const response = await axios.post(`${googleSheetUrl}?action=create&target=xauth`, requestData);
+    const response = await axios.post(PROXY_ENDPOINT, requestData, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Target-Gas-Url': googleSheetUrl,
+      },
+      params: {
+        action: 'create',
+        target: 'xauth',
+      },
+    });
 
     // レスポンスの検証
     if (response.data.status !== 'success') {
@@ -285,7 +296,16 @@ export const updateXAccount = createAsyncThunk<
     };
 
     // POSTリクエストでデータを更新 (action=update, target=xauth)
-    const response = await axios.post(`${googleSheetUrl}?action=update&target=xauth`, requestData);
+    const response = await axios.post(PROXY_ENDPOINT, requestData, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Target-Gas-Url': googleSheetUrl,
+      },
+      params: {
+        action: 'update',
+        target: 'xauth',
+      },
+    });
 
     // レスポンスの検証
     if (response.data.status !== 'success') {
@@ -330,7 +350,16 @@ export const deleteXAccount = createAsyncThunk<
     };
 
     // POSTリクエストでデータを削除 (action=delete, target=xauth)
-    const response = await axios.post(`${googleSheetUrl}?action=delete&target=xauth`, requestData);
+    const response = await axios.post(PROXY_ENDPOINT, requestData, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Target-Gas-Url': googleSheetUrl,
+      },
+      params: {
+        action: 'delete',
+        target: 'xauth',
+      },
+    });
 
     // レスポンスの検証
     if (response.data.status !== 'success') {
