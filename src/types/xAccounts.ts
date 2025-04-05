@@ -23,11 +23,11 @@ export type XPostImageDataType = {
 };
 
 export type MediaDataType = {
-  file: File;
+  file: File | null;
   fileName: string;
   fileId: string;
-  webViewLink: string;
-  webContentLink: string;
+  imgUrl: string;
+  mimeType: string;
 };
 
 export type XPostDataType = {

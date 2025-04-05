@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react';
 import { IconAlertCircle, IconCheck, IconRefresh } from '@tabler/icons-react';
-import axios from 'axios';
 import { Alert, Button, Group, LoadingOverlay, Paper, Tabs, Title } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { useAppSelector } from '@/hooks/rtkhooks';
+import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
+import { setInitialized } from '@/store/reducers/apiControllerSlice';
+import { fetchXErrors } from '@/store/reducers/xErrorsSlice';
+import { fetchXPosted } from '@/store/reducers/xPostedSlice';
+import { fetchXPosts } from '@/store/reducers/xPostsSlice';
 import { PostError, XPostDataType, XPostedDataType } from '@/types/xAccounts';
 import ErrorTable from './ErrorTable';
 import PostedTable from './PostedTable';
@@ -14,24 +17,41 @@ import PostsTable from './PostsTable';
  * 投稿予定データ、投稿済みデータ、エラーデータをタブで切り替えて表示する
  */
 const SheetData = () => {
+  const dispatch = useAppDispatch();
+  const { initialized } = useAppSelector((state) => state.apiController);
   const { user } = useAppSelector((state) => state.auth);
-  const [activeTab, setActiveTab] = useState<string | null>('posts');
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    xPostList,
+    isLoading: isPostsLoading,
+    isError: isPostsError,
+    errorMessage: postsErrorMessage,
+  } = useAppSelector((state) => state.xPosts);
+  const {
+    xPostedList,
+    isLoading: isPostedLoading,
+    isError: isPostedError,
+    errorMessage: postedErrorMessage,
+  } = useAppSelector((state) => state.xPosted);
+  const {
+    xErrorsList,
+    isLoading: isErrorsLoading,
+    isError: isErrorsError,
+    errorMessage: errorsErrorMessage,
+  } = useAppSelector((state) => state.xErrors);
 
-  // データ状態
-  const [postsData, setPostsData] = useState<XPostDataType[]>([]);
-  const [postedData, setPostedData] = useState<XPostedDataType[]>([]);
-  const [errorData, setErrorData] = useState<PostError[]>([]);
+  const [activeTab, setActiveTab] = useState<string | null>('posts');
+  const [error, setError] = useState<string | null>(null);
 
   // 通知ID管理用
   const [loadingNotificationId, setLoadingNotificationId] = useState<string | null>(null);
+
+  // 全体のローディング状態
+  const isLoading = isPostsLoading || isPostedLoading || isErrorsLoading;
 
   // 全データをフェッチ
   const fetchAllData = async () => {
     if (!user.googleSheetUrl) return;
 
-    setIsLoading(true);
     setError(null);
 
     // 進行中の通知があれば閉じる
@@ -53,9 +73,7 @@ const SheetData = () => {
     try {
       // 未投稿データを取得
       try {
-        const postsResponse = await axios.get(
-          `${user.googleSheetUrl}?action=fetch&target=postData`
-        );
+        const postsAction = await dispatch(fetchXPosts());
 
         // 通知を更新
         notifications.update({
@@ -65,13 +83,14 @@ const SheetData = () => {
           message: '投稿済みデータを取得しています...',
         });
 
-        if (postsResponse.data.status === 'success') {
-          setPostsData(postsResponse.data.data || []);
-        } else {
-          console.error('未投稿データ取得エラー:', postsResponse.data.message);
+        if (fetchXPosts.rejected.match(postsAction)) {
+          console.error('未投稿データ取得エラー:', postsAction.payload);
           notifications.show({
             title: '未投稿データ取得エラー',
-            message: postsResponse.data.message || '未投稿データの取得に失敗しました',
+            message:
+              typeof postsAction.payload === 'string'
+                ? postsAction.payload
+                : '未投稿データの取得に失敗しました',
             color: 'red',
             icon: <IconAlertCircle size={16} />,
           });
@@ -88,9 +107,7 @@ const SheetData = () => {
 
       // 投稿済みデータを取得
       try {
-        const postedResponse = await axios.get(
-          `${user.googleSheetUrl}?action=fetch&target=postedData`
-        );
+        const postedAction = await dispatch(fetchXPosted());
 
         // 通知を更新
         notifications.update({
@@ -100,13 +117,14 @@ const SheetData = () => {
           message: 'エラーデータを取得しています...',
         });
 
-        if (postedResponse.data.status === 'success') {
-          setPostedData(postedResponse.data.data || []);
-        } else {
-          console.error('投稿済みデータ取得エラー:', postedResponse.data.message);
+        if (fetchXPosted.rejected.match(postedAction)) {
+          console.error('投稿済みデータ取得エラー:', postedAction.payload);
           notifications.show({
             title: '投稿済みデータ取得エラー',
-            message: postedResponse.data.message || '投稿済みデータの取得に失敗しました',
+            message:
+              typeof postedAction.payload === 'string'
+                ? postedAction.payload
+                : '投稿済みデータの取得に失敗しました',
             color: 'red',
             icon: <IconAlertCircle size={16} />,
           });
@@ -123,17 +141,16 @@ const SheetData = () => {
 
       // エラーデータを取得
       try {
-        const errorResponse = await axios.get(
-          `${user.googleSheetUrl}?action=fetch&target=errorData`
-        );
+        const errorAction = await dispatch(fetchXErrors());
 
-        if (errorResponse.data.status === 'success') {
-          setErrorData(errorResponse.data.data || []);
-        } else {
-          console.error('エラーデータ取得エラー:', errorResponse.data.message);
+        if (fetchXErrors.rejected.match(errorAction)) {
+          console.error('エラーデータ取得エラー:', errorAction.payload);
           notifications.show({
             title: 'エラーデータ取得エラー',
-            message: errorResponse.data.message || 'エラーデータの取得に失敗しました',
+            message:
+              typeof errorAction.payload === 'string'
+                ? errorAction.payload
+                : 'エラーデータの取得に失敗しました',
             color: 'red',
             icon: <IconAlertCircle size={16} />,
           });
@@ -147,13 +164,13 @@ const SheetData = () => {
           icon: <IconAlertCircle size={16} />,
         });
       }
-
+      dispatch(setInitialized());
       // 全てのデータ取得が完了したら成功通知
       notifications.update({
         id: notificationId,
         loading: false,
         title: 'データ取得完了',
-        message: `未投稿: ${postsData.length}件, 投稿済み: ${postedData.length}件, エラー: ${errorData.length}件`,
+        message: `未投稿: ${xPostList.length}件, 投稿済み: ${xPostedList.length}件, エラー: ${xErrorsList.length}件`,
         icon: <IconCheck size={16} />,
         color: 'green',
         autoClose: 3000,
@@ -176,14 +193,16 @@ const SheetData = () => {
       });
 
       setLoadingNotificationId(null);
-    } finally {
-      setIsLoading(false);
     }
   };
 
-  // コンポーネントマウント時にデータを取得
+  // コンポーネントマウント時にデータを取得、但し毎回ではなく、URLが変更されたときのみ
   useEffect(() => {
-    fetchAllData();
+    if (user.googleSheetUrl) {
+      if (!initialized) {
+        fetchAllData();
+      }
+    }
 
     // コンポーネントのアンマウント時に進行中の通知をクリーンアップ
     return () => {
@@ -224,21 +243,21 @@ const SheetData = () => {
 
       <Tabs value={activeTab} onChange={setActiveTab}>
         <Tabs.List>
-          <Tabs.Tab value="posts">投稿予定 ({postsData.length})</Tabs.Tab>
-          <Tabs.Tab value="posted">投稿済み ({postedData.length})</Tabs.Tab>
-          <Tabs.Tab value="errors">エラー ({errorData.length})</Tabs.Tab>
+          <Tabs.Tab value="posts">投稿予定 ({xPostList.length})</Tabs.Tab>
+          <Tabs.Tab value="posted">投稿済み ({xPostedList.length})</Tabs.Tab>
+          <Tabs.Tab value="errors">エラー ({xErrorsList.length})</Tabs.Tab>
         </Tabs.List>
 
         <Tabs.Panel value="posts" pt="md">
-          <PostsTable data={postsData} isLoading={isLoading} />
+          <PostsTable data={xPostList} isLoading={isPostsLoading} />
         </Tabs.Panel>
 
         <Tabs.Panel value="posted" pt="md">
-          <PostedTable data={postedData} isLoading={isLoading} />
+          <PostedTable data={xPostedList} isLoading={isPostedLoading} />
         </Tabs.Panel>
 
         <Tabs.Panel value="errors" pt="md">
-          <ErrorTable data={errorData} isLoading={isLoading} />
+          <ErrorTable data={xErrorsList} isLoading={isErrorsLoading} />
         </Tabs.Panel>
       </Tabs>
     </Paper>

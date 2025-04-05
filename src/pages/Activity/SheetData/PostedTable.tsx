@@ -67,22 +67,6 @@ const PostedTable = ({ data, isLoading }: PostedTableProps) => {
       },
       {
         accessorKey: 'postedId',
-        header: '投稿結果',
-        size: 120,
-        enableSorting: true,
-        Cell: ({ cell }) => {
-          const value = cell.getValue<string>();
-          return value ? (
-            <Badge color="green" leftSection={<IconCheck size={14} />}>
-              成功
-            </Badge>
-          ) : (
-            <Badge color="red">失敗</Badge>
-          );
-        },
-      },
-      {
-        accessorKey: 'postedId',
         header: 'ポストID',
         size: 150,
         enableSorting: false,
@@ -129,6 +113,18 @@ const PostedTable = ({ data, isLoading }: PostedTableProps) => {
             '-'
           );
         },
+      },
+      {
+        accessorKey: 'postedAt',
+        header: '投稿日時',
+        size: 180,
+        enableSorting: true,
+        sortingFn: 'datetime',
+        Cell: ({ cell }) => (
+          <Text>
+            {cell.getValue<string>() ? new Date(cell.getValue<string>()).toLocaleString() : '-'}
+          </Text>
+        ),
       },
     ],
     []

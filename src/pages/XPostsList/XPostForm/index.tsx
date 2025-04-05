@@ -2,15 +2,18 @@ import dayjs, { Dayjs } from 'dayjs';
 import React, { useEffect, useRef, useState } from 'react';
 // @ts-ignore
 import twitter from '@ambassify/twitter-text';
-import { IconAlertCircle, IconCheck } from '@tabler/icons-react';
+import { IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { EmojiClickData } from 'emoji-picker-react';
 import emojiRegex from 'emoji-regex';
+import { set } from 'firebase/database';
 import { MRT_Row, MRT_TableInstance } from 'mantine-react-table';
 import {
+  ActionIcon,
   Alert,
   Box,
   Button,
   Card,
+  Dialog,
   Divider,
   Grid,
   Group,
@@ -28,14 +31,16 @@ import EmojiPicker, { EmojiPickerRef } from '@/components/EmojiPicker';
 import ImageListHorizontalScrolable from '@/components/ImageListHorizontalScrolable';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
 import { RootState } from '@/store';
+import { linkAndGetGoogleToken } from '@/store/reducers/googleAccessTokenSlice';
 import {
-  selectApiError,
-  selectApiStatus,
-  selectUploadedMedia,
-  uploadMultipleMedia,
-} from '@/store/reducers/apiControllerSlice';
-import { createXPost, updateXPost } from '@/store/reducers/xPostsSlice';
+  clearXPostsErrors,
+  createXPost,
+  selectXPosts,
+  selectXPostsStatus,
+  updateXPost,
+} from '@/store/reducers/xPostsSlice';
 import { MediaDataType, XPostDataType, XPostImageDataType } from '@/types/xAccounts';
+import { performUploadWorkflow } from '@/utils/googleDrive/uploadManager';
 import FileInput from './FileInput';
 
 interface XPostFormProps {
@@ -63,6 +68,8 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
   const [timeStamp, setTimeStamp] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showReauthButton, setShowReauthButton] = useState(false);
+  const [cancelUpload, setCancelUpload] = useState(false);
 
   const [weightedLength, setWeightedLength] = useState(0);
   const [selectedHashTags, setSelectedHashTags] = useState<string[]>([]);
@@ -71,31 +78,36 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
   const { xAccountId, table, xPostData, feedBack } = props;
 
   const dispatch = useAppDispatch();
-  const apiStatus = useAppSelector(selectApiStatus);
-  const apiError = useAppSelector(selectApiError);
-  const uploadedMedia = useAppSelector(selectUploadedMedia);
-  const xPostsStatus = useAppSelector((state: RootState) => state.xPosts);
+
+  const {
+    isLoading,
+    isError,
+    errorMessage: postErrorMessage,
+    process,
+  } = useAppSelector(selectXPostsStatus);
+  const {
+    isAuthLoading: isTokenLoading,
+    error,
+    googleAccessToken,
+  } = useAppSelector((state: RootState) => state.googleAccessTokenState);
 
   // Xポストのステータスが変化したときの処理
   useEffect(() => {
-    if (xPostsStatus.isError) {
+    if (isError) {
       setIsSubmitting(false);
-      setErrorMessage(xPostsStatus.errorMessage);
+      setErrorMessage(postErrorMessage);
       notifications.show({
         title: 'エラー',
-        message: xPostsStatus.errorMessage,
+        message: postErrorMessage,
         color: 'red',
         icon: <IconAlertCircle />,
       });
-    } else if (!xPostsStatus.isLoading && xPostsStatus.process === 'idle' && isSubmitting) {
+    } else if (!isLoading && (process === 'addNew' || process === 'update') && isSubmitting) {
       setIsSubmitting(false);
-      notifications.show({
-        title: '成功',
-        message: 'Xポストが正常に保存されました',
-        color: 'green',
-        icon: <IconCheck />,
-      });
-      feedBack({ operation: 'success', text: 'Xポストが正常に保存されました' });
+      setCancelUpload(false);
+
+      // フィードバックと画面遷移を処理
+      feedBack({ operation: process, text: text.substring(0, 30) + '...' });
 
       // 投稿の作成または更新が成功した場合、テーブルの表示状態をリセット
       if (xPostData.id === '') {
@@ -103,8 +115,15 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
       } else {
         table.setEditingRow(null);
       }
+
+      // メモリリークを防ぐためにリソースをクリーンアップ
+      pics.forEach((pic) => {
+        if (pic.imgUrl && pic.imgUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(pic.imgUrl);
+        }
+      });
     }
-  }, [xPostsStatus, isSubmitting, feedBack, table, xPostData.id]);
+  }, [isLoading, isError, process]);
 
   useEffect(() => {
     const fetchImageData = async () => {
@@ -115,11 +134,11 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
 
           if (Array.isArray(mediaItems) && mediaItems.length > 0) {
             const loadedPics: MediaDataType[] = mediaItems.map((item) => ({
-              file: new File([], item.filename || ''),
+              file: item.fileId ? null : item.file,
               fileName: item.filename || '',
               fileId: item.fileId || '',
-              webViewLink: item.webViewLink || '',
-              webContentLink: item.webContentLink || '',
+              mimeType: item.mimeType || '',
+              imgUrl: item.imgUrl,
             }));
 
             setPics(loadedPics);
@@ -130,7 +149,7 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
       }
     };
 
-    setText(xPostData.contents || '');
+    setText(xPostData.contents || xPostData.id || 'null');
 
     if (xPostData.postSchedule) {
       setScheduledPostTime(dayjs(xPostData.postSchedule).toDate());
@@ -148,7 +167,7 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
       const emojiCount = countEmoji(xPostData.contents);
       setWeightedLength(response.weightedLength + emojiCount);
     }
-  }, [xPostData]);
+  }, []);
 
   const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -193,7 +212,7 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
   const removeImage = (path: string) => {
     const removedPic = pics.find((pic) => pic.fileName === path);
     if (removedPic) {
-      URL.revokeObjectURL(removedPic.webContentLink);
+      URL.revokeObjectURL(removedPic.imgUrl);
     }
     setPics((oldPics) => oldPics.filter((pic) => pic.fileName !== path));
   };
@@ -215,39 +234,97 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
 
     setIsSubmitting(true);
     setErrorMessage(null);
-
+    setShowReauthButton(false);
+    let finalMediaData: MediaDataType[] = [];
     try {
-      let mediaJsonString = '';
-
-      // 画像がある場合、一括アップロード
+      // 画像がある場合、アップロード
       if (pics.length > 0) {
         // すでにアップロード済みの画像（fileIdがある）とそうでないものを分ける
         const uploadTargets = pics.filter((pic) => !pic.fileId && pic.file);
         const existingMedia = pics.filter((pic) => pic.fileId);
+        const postMedia: MediaDataType[] = [];
 
         if (uploadTargets.length > 0) {
-          // メディアをアップロード
-          const mediaFiles = uploadTargets.map((pic) => ({
-            file: pic.file,
-            filename: pic.fileName,
-            mimeType: pic.file.type,
-          }));
+          let currentToken = googleAccessToken;
+          // 1. 実行前にトークンを確認・取得
+          if (!currentToken) {
+            console.log('No initial token, attempting to get one...');
+            const resultAction = await dispatch(linkAndGetGoogleToken());
+            if (linkAndGetGoogleToken.fulfilled.match(resultAction)) {
+              currentToken = resultAction.payload.accessToken;
+            } else {
+              setErrorMessage(resultAction.payload ?? 'Google連携/認証が必要です。');
+              setShowReauthButton(true); // 失敗したら再認証ボタン表示
+              setIsSubmitting(false); // ローディング解除
+              return; // 中断
+            }
+          }
 
-          const resultAction = await dispatch(uploadMultipleMedia({ files: mediaFiles }));
-
-          if (uploadMultipleMedia.fulfilled.match(resultAction)) {
-            // アップロード済みのメディア情報と新しくアップロードしたメディア情報を結合
-            const combinedMedia = [...existingMedia, ...resultAction.payload];
-            mediaJsonString = JSON.stringify(combinedMedia);
-          } else {
-            // エラーハンドリング
+          if (!currentToken) {
+            // 再度チェック
+            setErrorMessage('Googleアクセストークンを取得できませんでした。');
+            setShowReauthButton(true);
             setIsSubmitting(false);
-            setErrorMessage('メディアのアップロードに失敗しました');
             return;
           }
-        } else if (existingMedia.length > 0) {
-          // すでにアップロード済みの画像のみの場合
-          mediaJsonString = JSON.stringify(existingMedia);
+          let successfulUploads: MediaDataType[] = [];
+          let needsReauth = false;
+          // 2. メディアをアップロード
+          for (const pic of uploadTargets) {
+            if (pic.file) {
+              const notificationId = notifications.show({
+                title: `${pic.fileName}をアップロード中`,
+                message: 'しばらくお待ちください',
+                loading: true,
+                autoClose: false,
+              });
+              const result = await performUploadWorkflow({
+                selectedFile: pic.file,
+                dispatch,
+              });
+              if (result.success && result.uploadData) {
+                notifications.update({
+                  id: notificationId,
+                  title: 'アップロード完了',
+                  message: result.message,
+                  color: 'green',
+                  icon: <IconCheck />,
+                  autoClose: 5000,
+                });
+                // アップロード成功
+                successfulUploads.push({
+                  file: pic.file,
+                  fileId: result.uploadData.fileId,
+                  fileName: result.uploadData.fileName,
+                  mimeType: result.uploadData.mimeType,
+                  imgUrl: result.uploadData.imageUrl ?? '',
+                });
+              } else {
+                notifications.update({
+                  id: notificationId,
+                  title: 'アップロード失敗',
+                  message: result.message,
+                  color: 'red',
+                  icon: <IconAlertCircle />,
+                });
+                setErrorMessage(result.message);
+                if (result.needsReauth) {
+                  // 再認証が必要な場合
+                  needsReauth = true;
+                  break;
+                }
+              }
+            }
+          }
+
+          if (needsReauth) {
+            setShowReauthButton(true);
+            setIsSubmitting(false);
+            // 処理中断
+            return;
+          }
+          // 3. アップロード成功したメディアを追加
+          finalMediaData = [...existingMedia, ...successfulUploads];
         }
       }
 
@@ -255,15 +332,14 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
       const newPost: XPostDataType = {
         id: xPostData.id || '',
         contents: text,
-        media: mediaJsonString,
+        media: finalMediaData.length > 0 ? JSON.stringify(finalMediaData) : '',
         postSchedule: scheduledPostTime ? scheduledPostTime.toISOString() : null,
-        postTo: xPostData.postTo || '',
+        postTo: xAccountId || '',
         inReplyToInternal: xPostData.inReplyToInternal || '',
       };
 
       // 新規作成または更新
       if (!xPostData.id) {
-        newPost.id = `${Date.now()}`;
         await dispatch(createXPost({ xAccountId, xPost: newPost }));
       } else {
         await dispatch(updateXPost({ xAccountId, xPost: newPost }));
@@ -276,11 +352,19 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
   };
 
   const handleCancel = () => {
+    if (isError) {
+      dispatch(clearXPostsErrors());
+    }
     if (xPostData.id === '') {
       table.setCreatingRow(null);
     } else {
       table.setEditingRow(null);
     }
+  };
+
+  const clearErrors = () => {
+    setErrorMessage(null);
+    dispatch(clearXPostsErrors());
   };
 
   const handleReset = () => {
@@ -290,7 +374,7 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     setScheduledPostTime(null);
     setSelectedHashTags([]);
     setWeightedLength(0);
-    setErrorMessage(null);
+    clearErrors();
   };
 
   const countEmoji = (text: string): number => {
@@ -309,23 +393,64 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     setWeightedLength(response.weightedLength + emojiCount);
   };
 
+  const handleCancelUpload = () => {
+    setCancelUpload(true);
+  };
+  // 再認証ボタンクリック
+  const handleReAuthClick = async () => {
+    const resultAction = await dispatch(linkAndGetGoogleToken());
+    if (linkAndGetGoogleToken.rejected.match(resultAction)) {
+      setErrorMessage(`Google連携/認証に失敗しました: ${resultAction.payload}`);
+    } else {
+      notifications.show({
+        title: '成功',
+        message: 'Google Driveへのアクセス許可を更新しました。再度アップロードをお試しください。',
+        color: 'green',
+        icon: <IconCheck />,
+      });
+    }
+  };
+
   return (
     <Grid>
-      <Grid.Col span={12} m="8px">
-        <Card title="Xポスト">
+      <Grid.Col span={12}>
+        <Card withBorder>
+          <Card.Section withBorder inheritPadding py="xs">
+            <Group justify="space-between">
+              <Text fw={500} size="lg">
+                {xPostData.id === '' ? '新規Xポスト作成' : 'Xポスト編集'}
+                {`:@${xAccountId}`}
+              </Text>
+              <ActionIcon onClick={handleCancel} variant="transparent">
+                <IconX />
+              </ActionIcon>
+            </Group>
+          </Card.Section>
           <LoadingOverlay visible={isSubmitting} />
           {errorMessage && (
             <Alert
               color="red"
               title="エラー"
-              withCloseButton
-              onClose={() => setErrorMessage(null)}
+              withCloseButton={!showReauthButton}
+              onClose={() => clearErrors()}
               mb="md"
             >
               {errorMessage}
+              {/* 再認証が必要なエラーメッセージの場合にボタン表示 */}
+              {showReauthButton && (
+                <Button
+                  mt="sm"
+                  variant="outline"
+                  color="red"
+                  onClick={handleReAuthClick}
+                  loading={isTokenLoading} // isAuthLoading は Thunk 実行中フラグ
+                >
+                  {isTokenLoading ? '認証中...' : 'Google 再認証'}
+                </Button>
+              )}
             </Alert>
           )}
-          <Card.Section p="0 24px 12px 24px">
+          <Card.Section p="12px 24px 12px 24px">
             <Stack>
               <Textarea
                 error={contentError ? '投稿内容を入力してください' : null}

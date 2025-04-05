@@ -52,6 +52,7 @@ interface ApiControllerState {
     archiveFileUrl: string;
     message: string;
   } | null;
+  initialized: boolean;
 }
 
 // トリガー作成のためのパラメータ型
@@ -106,8 +107,10 @@ const initialState: ApiControllerState = {
     archiveFileUrl: '',
     message: '',
   },
+  initialized: false,
 };
 
+export const PROXY_ENDPOINT = import.meta.env.VITE_PROXY_URL || '/api/gas-proxy';
 // トリガー作成のための非同期アクション
 export const createTrigger = createAsyncThunk<
   {
@@ -126,21 +129,35 @@ export const createTrigger = createAsyncThunk<
 >('api/createTrigger', async (params: CreateTriggerParams, { getState, rejectWithValue }) => {
   try {
     const state = getState() as RootState;
-    const restUrl = state.auth.user?.googleSheetUrl;
+    const targetGasUrl = state.auth.user?.googleSheetUrl;
 
-    if (!restUrl) {
+    if (!targetGasUrl) {
       return rejectWithValue('GoogleSheet URL が設定されていません');
     }
 
-    const response = await axios.post(`${restUrl}?action=create&target=trigger`, {
-      intervalMinutes: params.intervalMinutes,
-    });
+    const response = await axios.post(
+      PROXY_ENDPOINT,
+      {
+        intervalMinutes: params.intervalMinutes,
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Target-Gas-Url': targetGasUrl,
+        },
+        params: {
+          action: 'create',
+          target: 'trigger',
+          functionName: params.functionName,
+        },
+      }
+    );
 
     // レスポンスのステータスをチェック
     if (response.data.status === 'error') {
       return rejectWithValue(response.data.message || 'トリガーの作成に失敗しました');
     }
-
+    console.log('トリガー作成:', response.data);
     return response.data;
   } catch (error: any) {
     return rejectWithValue(
@@ -164,13 +181,26 @@ export const deleteTrigger = createAsyncThunk<
 >('api/deleteTrigger', async (_, { getState, rejectWithValue }) => {
   try {
     const state = getState() as RootState;
-    const restUrl = state.auth.user?.googleSheetUrl;
+    const targetGasUrl = state.auth.user?.googleSheetUrl;
 
-    if (!restUrl) {
+    if (!targetGasUrl) {
       return rejectWithValue('GoogleSheet URL が設定されていません');
     }
 
-    const response = await axios.post(`${restUrl}?action=delete&target=trigger`, {});
+    const response = await axios.post(
+      PROXY_ENDPOINT,
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Target-Gas-Url': targetGasUrl,
+        },
+        params: {
+          action: 'delete',
+          target: 'trigger',
+        },
+      }
+    );
 
     // レスポンスのステータスをチェック
     if (response.data.status === 'error') {
@@ -218,7 +248,7 @@ export const getTriggerStatus = createAsyncThunk<
     if (response.data.status === 'error') {
       return rejectWithValue(response.data.message || 'トリガー情報の取得に失敗しました');
     }
-
+    console.log('トリガー情報:', response.data);
     return response.data.data;
   } catch (error: any) {
     return rejectWithValue(
@@ -226,130 +256,6 @@ export const getTriggerStatus = createAsyncThunk<
     );
   }
 });
-
-// メディアアップロードのための非同期アクション
-export const uploadMedia = createAsyncThunk(
-  'api/uploadMedia',
-  async (params: UploadMediaParams, { getState, rejectWithValue }) => {
-    try {
-      const state = getState() as RootState;
-      const restUrl = state.auth.user?.googleSheetUrl;
-
-      if (!restUrl) {
-        return rejectWithValue('GoogleSheet URL が設定されていません');
-      }
-
-      // ファイルをBase64エンコード
-      const fileReader = new FileReader();
-
-      // FileReaderをPromiseでラップする
-      const fileBase64 = await new Promise<string>((resolve, reject) => {
-        fileReader.onload = () => {
-          // Base64エンコード文字列を取得（結果はDataURLなので、「data:image/jpeg;base64,」の部分を削除）
-          const base64 = fileReader.result as string;
-          const base64Data = base64.split(',')[1]; // Base64データ部分のみを取得
-          resolve(base64Data);
-        };
-        fileReader.onerror = () => {
-          reject(new Error('ファイルの読み込みに失敗しました'));
-        };
-        fileReader.readAsDataURL(params.file);
-      });
-
-      // APIリクエスト用のデータを作成
-      const requestData = {
-        xMediaFileData: [
-          {
-            filename: params.filename || params.file.name,
-            filedata: fileBase64,
-            mimeType: params.mimeType || params.file.type,
-          },
-        ],
-        description: params.description,
-      };
-
-      const response = await axios.post(`${restUrl}?action=upload&target=media`, requestData);
-
-      // レスポンスのステータスをチェック
-      if (response.data.status === 'error') {
-        return rejectWithValue(response.data.message || 'メディアのアップロードに失敗しました');
-      }
-
-      return response.data.data;
-    } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          'メディアのアップロード中にエラーが発生しました'
-      );
-    }
-  }
-);
-
-// 複数メディアアップロードのための非同期アクション
-// TODO: 複数ファイルのアップロード　要チェック
-export const uploadMultipleMedia = createAsyncThunk(
-  'api/uploadMultipleMedia',
-  async (params: UploadMultipleMediaParams, { getState, rejectWithValue }) => {
-    try {
-      const state = getState() as RootState;
-      const restUrl = state.auth.user?.googleSheetUrl;
-
-      if (!restUrl) {
-        return rejectWithValue('GoogleSheet URL が設定されていません');
-      }
-
-      // 複数のファイルをBase64エンコード
-      const filePromises = params.files.map(async (fileInfo) => {
-        const fileReader = new FileReader();
-
-        // FileReaderをPromiseでラップする
-        const fileBase64 = await new Promise<string>((resolve, reject) => {
-          fileReader.onload = () => {
-            // Base64エンコード文字列を取得
-            const base64 = fileReader.result as string;
-            const base64Data = base64.split(',')[1]; // Base64データ部分のみを取得
-            resolve(base64Data);
-          };
-          fileReader.onerror = () => {
-            reject(new Error(`ファイルの読み込みに失敗しました: ${fileInfo.filename}`));
-          };
-          fileReader.readAsDataURL(fileInfo.file);
-        });
-
-        return {
-          filename: fileInfo.filename,
-          filedata: fileBase64,
-          mimeType: fileInfo.mimeType,
-        };
-      });
-
-      // 全ファイルのBase64エンコードを待機
-      const xMediaFileData = await Promise.all(filePromises);
-
-      // APIリクエスト用のデータを作成
-      const requestData = {
-        xMediaFileData,
-        description: params.description,
-      };
-
-      const response = await axios.post(`${restUrl}?action=upload&target=media`, requestData);
-
-      // レスポンスのステータスをチェック
-      if (response.data.status === 'error') {
-        return rejectWithValue(response.data.message || '複数メディアのアップロードに失敗しました');
-      }
-
-      return response.data.data;
-    } catch (error: any) {
-      return rejectWithValue(
-        error.response?.data?.message ||
-          error.message ||
-          '複数メディアのアップロード中にエラーが発生しました'
-      );
-    }
-  }
-);
 
 // シートアーカイブのための非同期アクション
 export const archiveSheet = createAsyncThunk(
@@ -407,6 +313,9 @@ const apiControllerSlice = createSlice({
     clearArchivedSheet: (state) => {
       state.archivedSheet = null;
     },
+    setInitialized: (state) => {
+      state.initialized = true;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -458,36 +367,6 @@ const apiControllerSlice = createSlice({
         state.status = 'failed';
         state.error = action.payload as string;
       })
-      // uploadMedia
-      .addCase(uploadMedia.pending, (state) => {
-        state.status = 'loading';
-        state.error = null;
-      })
-      .addCase(uploadMedia.fulfilled, (state, action) => {
-        state.status = 'succeeded';
-        state.error = null;
-        state.uploadedMedia = action.payload;
-      })
-      .addCase(uploadMedia.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload as string;
-      })
-      // uploadMultipleMedia
-      .addCase(uploadMultipleMedia.pending, (state) => {
-        state.status = 'loading';
-        state.error = null;
-        state.uploadedMedia = null;
-      })
-      .addCase(uploadMultipleMedia.fulfilled, (state, action) => {
-        state.status = 'succeeded';
-        state.error = null;
-        state.uploadedMedia = action.payload; // 複数ファイルの結果を保存
-      })
-      .addCase(uploadMultipleMedia.rejected, (state, action) => {
-        state.status = 'failed';
-        state.error = action.payload as string;
-        state.uploadedMedia = null;
-      })
       // archiveSheet
       .addCase(archiveSheet.pending, (state) => {
         state.status = 'loading';
@@ -507,14 +386,13 @@ const apiControllerSlice = createSlice({
   },
 });
 
-export const { clearApiErrors, clearUploadedMedia, clearArchivedSheet } =
+export const { clearApiErrors, clearUploadedMedia, clearArchivedSheet, setInitialized } =
   apiControllerSlice.actions;
 
 // セレクター
 export const selectApiStatus = (state: RootState) => state.apiController.status;
 export const selectApiError = (state: RootState) => state.apiController.error;
 export const selectTriggerStatus = (state: RootState) => state.apiController.triggerStatus;
-export const selectUploadedMedia = (state: RootState) => state.apiController.uploadedMedia;
 export const selectArchivedSheet = (state: RootState) => state.apiController.archivedSheet;
 
 export default apiControllerSlice.reducer;
