@@ -114,18 +114,6 @@ const PostedTable = ({ data, isLoading }: PostedTableProps) => {
           );
         },
       },
-      {
-        accessorKey: 'postedAt',
-        header: '投稿日時',
-        size: 180,
-        enableSorting: true,
-        sortingFn: 'datetime',
-        Cell: ({ cell }) => (
-          <Text>
-            {cell.getValue<string>() ? new Date(cell.getValue<string>()).toLocaleString() : '-'}
-          </Text>
-        ),
-      },
     ],
     []
   );
