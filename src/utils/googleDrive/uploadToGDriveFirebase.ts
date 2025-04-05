@@ -1,9 +1,3 @@
-// src/features/upload/uploadToGDriveFirebase.ts (例)
-
-// --- 型定義 ---
-// UploadSuccessResult と UploadErrorResult は uploadManager.ts と共有するか、
-// 共通の型定義ファイルに置くのが良いでしょう。ここでは再掲します。
-
 export interface UploadSuccessResult {
   error?: false;
   fileId: string;
@@ -20,13 +14,6 @@ export interface UploadErrorResult {
 }
 
 type UploadFunctionResult = UploadSuccessResult | UploadErrorResult;
-
-// uploadToGDriveFirebase.ts (または googleDriveApi.ts)
-
-// ... (他のimportや型定義) ...
-
-// ★ 保存先フォルダ名を定義 (定数または設定から取得) ★
-const TARGET_FOLDER_NAME = 'X_Post_MediaFiles'; // 例: GASコードと同じフォルダ名
 
 /**
  * 指定されたパスのフォルダIDを取得、なければ作成してIDを返すヘルパー関数
@@ -154,7 +141,7 @@ export async function uploadFileToGoogleDrive(
       console.error('(uploadFileToGoogleDrive) Failed to get or create target folder.');
       return {
         error: true,
-        message: `保存先フォルダ「${TARGET_FOLDER_NAME}」の準備に失敗しました。`,
+        message: `保存先フォルダ「${targetFolderPath}」の準備に失敗しました。`,
       };
     }
     console.log(`(uploadFileToGoogleDrive) Target folder ID: ${folderId}`);
