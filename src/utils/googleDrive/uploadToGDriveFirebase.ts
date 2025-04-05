@@ -21,6 +21,106 @@ export interface UploadErrorResult {
 
 type UploadFunctionResult = UploadSuccessResult | UploadErrorResult;
 
+// uploadToGDriveFirebase.ts (または googleDriveApi.ts)
+
+// ... (他のimportや型定義) ...
+
+// ★ 保存先フォルダ名を定義 (定数または設定から取得) ★
+const TARGET_FOLDER_NAME = 'X_Post_MediaFiles'; // 例: GASコードと同じフォルダ名
+
+/**
+ * 指定されたパスのフォルダIDを取得、なければ作成してIDを返すヘルパー関数
+ * パスは '/' 区切りで階層を指定可能 (例: "Parent/Child/Grandchild")
+ * @param folderPath 作成または検索するフォルダのパス
+ * @param accessToken Google API呼び出し用のアクセストークン
+ * @returns 最下層のフォルダID (string) またはエラー発生時は null
+ */
+async function getOrCreateFolderIdByPath(
+  folderPath: string,
+  accessToken: string
+): Promise<string | null> {
+  const folderNames = folderPath.split('/').filter((name) => name.length > 0); // パスを分割
+  let parentFolderId = 'root'; // ルートから開始
+
+  console.log(`(getOrCreateFolderIdByPath) Ensuring folder path: ${folderPath}`);
+
+  try {
+    for (const folderName of folderNames) {
+      const searchUrl = `https://www.googleapis.com/drive/v3/files?q=mimeType='application/vnd.google-apps.folder' and name='${encodeURIComponent(folderName)}' and '${parentFolderId}' in parents and trashed=false&fields=files(id, name)`;
+      console.log(
+        `(getOrCreateFolderIdByPath) Searching for "${folderName}" in parent ${parentFolderId}...`
+      );
+
+      const searchResponse = await fetch(searchUrl, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+      });
+      const searchResult = await searchResponse.json().catch(() => ({}));
+
+      if (!searchResponse.ok) {
+        console.error(
+          `(getOrCreateFolderIdByPath) Error searching folder "${folderName}": ${searchResponse.status}`,
+          searchResult
+        );
+        return null; // 検索エラー
+      }
+
+      if (searchResult.files && searchResult.files.length > 0) {
+        // フォルダが見つかった場合
+        parentFolderId = searchResult.files[0].id;
+        console.log(
+          `(getOrCreateFolderIdByPath) Found folder "${folderName}" with ID: ${parentFolderId}`
+        );
+      } else {
+        // フォルダが見つからない場合は作成
+        console.log(
+          `(getOrCreateFolderIdByPath) Folder "${folderName}" not found in ${parentFolderId}. Creating...`
+        );
+        const createUrl = 'https://www.googleapis.com/drive/v3/files';
+        const folderMetadata = {
+          name: folderName,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [parentFolderId], // ★ 現在の親フォルダを指定
+        };
+
+        const createResponse = await fetch(createUrl, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(folderMetadata),
+        });
+        const createResponseBody = await createResponse.json().catch(() => ({}));
+
+        if (!createResponse.ok) {
+          console.error(
+            `(getOrCreateFolderIdByPath) Error creating folder "${folderName}": ${createResponse.status}`,
+            createResponseBody
+          );
+          return null; // 作成失敗
+        }
+        const newFolderId = createResponseBody.id;
+        if (!newFolderId) {
+          console.error(
+            '(getOrCreateFolderIdByPath) Folder creation succeeded but no ID returned:',
+            createResponseBody
+          );
+          return null;
+        }
+        parentFolderId = newFolderId; // 次のループのために親IDを更新
+        console.log(
+          `(getOrCreateFolderIdByPath) Created folder "${folderName}" with ID: ${parentFolderId}`
+        );
+      }
+    }
+    // ループが完了したら、最後の parentFolderId が目的のフォルダID
+    return parentFolderId;
+  } catch (error) {
+    console.error(`(getOrCreateFolderIdByPath) Unexpected error for path "${folderPath}":`, error);
+    return null;
+  }
+}
+
 /**
  * 指定されたファイルをユーザーのGoogle Driveにアップロードし、
  * File IDや画像表示URL（画像の場合）を含む結果を返します。
@@ -31,7 +131,8 @@ type UploadFunctionResult = UploadSuccessResult | UploadErrorResult;
  */
 export async function uploadFileToGoogleDrive(
   file: File,
-  accessToken: string // この関数が呼ばれる時点でトークンは有効なはずなので null を許容しない
+  accessToken: string, // この関数が呼ばれる時点でトークンは有効なはずなので null を許容しない
+  targetFolderPath: string
 ): Promise<UploadFunctionResult> {
   // 引数チェック (file は呼び出し元でチェック済みと仮定)
   if (!accessToken) {
@@ -45,6 +146,19 @@ export async function uploadFileToGoogleDrive(
   // const isVideo = file.type.startsWith('video/');
 
   try {
+    // ★ 0. 保存先フォルダIDを取得/作成 ★
+    const folderId = await getOrCreateFolderIdByPath(targetFolderPath, accessToken);
+    if (!folderId) {
+      // フォルダの取得/作成に失敗した場合、ルートにアップロードするかエラーにするか選択
+      // ここではエラーにする
+      console.error('(uploadFileToGoogleDrive) Failed to get or create target folder.');
+      return {
+        error: true,
+        message: `保存先フォルダ「${TARGET_FOLDER_NAME}」の準備に失敗しました。`,
+      };
+    }
+    console.log(`(uploadFileToGoogleDrive) Target folder ID: ${folderId}`);
+
     // 1. Google Drive にファイルをアップロード
     console.log(`(uploadFileToGoogleDrive) Uploading "${file.name}"...`);
     const metadata = {
