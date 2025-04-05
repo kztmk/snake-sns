@@ -23,11 +23,11 @@ export type XPostImageDataType = {
 };
 
 export type MediaDataType = {
-  file: File;
+  file: File | null;
   fileName: string;
   fileId: string;
-  webViewLink: string;
-  webContentLink: string;
+  imgUrl: string;
+  mimeType: string;
 };
 
 export type XPostDataType = {
@@ -38,6 +38,19 @@ export type XPostDataType = {
   contents?: string;
   media?: string; // JSON.stringify(UploadedMediaType[])
   inReplyToInternal?: string;
+};
+
+export type XPostedDataType = {
+  id?: string;
+  createdAt?: string;
+  postSchedule?: string | null;
+  postTo?: string;
+  contents?: string;
+  media?: string;
+  inReplyToInternal?: string;
+  postedId?: string;
+  inReplyToOnX?: string;
+  postedAt: string;
 };
 
 export type XPostListFetchStatus = {

@@ -1,17 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-
-import {
-  Box,
-  Collapse,
-  Group,
-  Menu,
-  Text,
-  Tooltip,
-  UnstyledButton,
-} from '@mantine/core';
 import { IconChevronRight } from '@tabler/icons-react';
 import { useLocation, useNavigate } from 'react-router';
-
+import { Box, Collapse, Group, Menu, Text, Tooltip, UnstyledButton } from '@mantine/core';
 import classes from './Links.module.css';
 
 interface LinksGroupProps {
@@ -28,15 +18,7 @@ interface LinksGroupProps {
 }
 
 export function LinksGroup(props: LinksGroupProps) {
-  const {
-    icon: Icon,
-    label,
-    initiallyOpened,
-    link,
-    links,
-    closeSidebar,
-    isMini,
-  } = props;
+  const { icon: Icon, label, initiallyOpened, link, links, closeSidebar, isMini } = props;
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname;
@@ -69,7 +51,7 @@ export function LinksGroup(props: LinksGroupProps) {
       </Menu.Item>
     ) : (
       <LinkItem key={link.label} link={link} />
-    ),
+    )
   );
 
   const content: React.ReactElement = useMemo(() => {
@@ -96,11 +78,7 @@ export function LinksGroup(props: LinksGroupProps) {
                 data-active={opened || undefined}
                 data-mini={isMini}
               >
-                <Tooltip
-                  label={label}
-                  position="right"
-                  transitionProps={{ duration: 0 }}
-                >
+                <Tooltip label={label} position="right" transitionProps={{ duration: 0 }}>
                   <Icon size={24} />
                 </Tooltip>
               </UnstyledButton>
@@ -139,24 +117,13 @@ export function LinksGroup(props: LinksGroupProps) {
               )}
             </Group>
           </UnstyledButton>
-          {hasLinks ? <Collapse in={opened}>{items}</Collapse> : null}
+          {hasLinks ? <Collapse in={(!isMini && hasLinks) || opened}>{items}</Collapse> : null}
         </>
       );
     }
 
     return view;
-  }, [
-    ChevronIcon,
-    Icon,
-    closeSidebar,
-    hasLinks,
-    isMini,
-    items,
-    label,
-    link,
-    opened,
-    navigate,
-  ]);
+  }, [ChevronIcon, Icon, closeSidebar, hasLinks, isMini, items, label, link, opened, navigate]);
 
   useEffect(() => {
     const paths = pathname.split('/');
