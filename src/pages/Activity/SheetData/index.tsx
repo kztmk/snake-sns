@@ -8,7 +8,7 @@ import { fetchXErrors } from '@/store/reducers/xErrorsSlice';
 import { fetchXPosted } from '@/store/reducers/xPostedSlice';
 import { fetchXPosts } from '@/store/reducers/xPostsSlice';
 import { PostError, XPostDataType, XPostedDataType } from '@/types/xAccounts';
-import ErrorTable from './ErrorTable';
+import ErrorsTable from './ErrorsTable';
 import PostedTable from './PostedTable';
 import PostsTable from './PostsTable';
 
@@ -257,7 +257,7 @@ const SheetData = () => {
         </Tabs.Panel>
 
         <Tabs.Panel value="errors" pt="md">
-          <ErrorTable data={xErrorsList} isLoading={isErrorsLoading} />
+          <ErrorsTable data={xErrorsList} isLoading={isErrorsLoading} />
         </Tabs.Panel>
       </Tabs>
     </Paper>

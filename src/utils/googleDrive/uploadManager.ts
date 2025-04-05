@@ -1,5 +1,4 @@
-// src/features/upload/uploadManager.ts (例)
-
+import dayjs from 'dayjs';
 import { User } from 'firebase/auth'; // Firebase User型
 import { useAppSelector } from '@/hooks/rtkhooks'; // ReduxのSelector型
 import { AppDispatch, RootState } from '@/store'; // ReduxのDispatch型
@@ -9,11 +8,7 @@ import {
   linkAndGetGoogleToken,
 } from '@/store/reducers/googleAccessTokenSlice';
 // SliceのアクションとThunk
-import {
-  UploadErrorResult,
-  uploadFileToGoogleDrive,
-  UploadSuccessResult,
-} from './uploadToGDriveFirebase';
+import { uploadFileToGoogleDrive, UploadSuccessResult } from './uploadToGDriveFirebase';
 
 // アップロード関数
 
@@ -59,6 +54,13 @@ export const performUploadWorkflow = async ({
     }
   }
 
+  // ★ ここでターゲットフォルダ名を決定 ★
+  const currentYear = dayjs().format('YYYY');
+  const currentMonth = dayjs().format('MM');
+  const dynamicTargetFolderName = `X_Post_MediaFiles/${currentYear}/${currentMonth}`;
+
+  console.log(`Target folder for upload: ${dynamicTargetFolderName}`);
+
   // 2. トークンを使ってアップロード実行
   if (!currentToken) {
     // ここに来る場合、上記の取得に失敗している
@@ -70,7 +72,11 @@ export const performUploadWorkflow = async ({
   }
 
   console.log(`Uploading "${selectedFile.name}" with Google Token...`);
-  const uploadResult = await uploadFileToGoogleDrive(selectedFile, currentToken);
+  const uploadResult = await uploadFileToGoogleDrive(
+    selectedFile,
+    currentToken,
+    dynamicTargetFolderName
+  );
 
   if (uploadResult.error) {
     console.error('Upload failed:', uploadResult.message, uploadResult.details);
