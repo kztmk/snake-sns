@@ -1,4 +1,4 @@
-import { lazy } from 'react';
+import React, { lazy } from 'react';
 import Loadable from '@/components/Loader/Loaderble';
 // project-imports
 import BlankPage from '@/layouts/BlankPage/';

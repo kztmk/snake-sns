@@ -1,10 +1,9 @@
 import { ReactNode } from 'react';
-import  { Outlet } from 'react-router';
-
+import { Outlet } from 'react-router';
 import { AppShell, Container, rem, useMantineTheme } from '@mantine/core';
 import { useDisclosure, useLocalStorage, useMediaQuery } from '@mantine/hooks';
-
 import AppMain from '@/components/AppMain';
+import DataSynchronizer from '@/components/DataSynchronizer';
 import FooterNav from '@/components/FooterNav';
 import HeaderNav from '@/components/HeaderNav';
 import Navigation from '@/components/Navigation';
@@ -45,6 +44,9 @@ export function MainLayout() {
       }}
       padding={0}
     >
+      {/* データ同期コンポーネント - UI要素を出力せずバックグラウンドで動作 */}
+      <DataSynchronizer />
+
       <AppShell.Header
         style={{
           height: rem(60),
@@ -68,7 +70,9 @@ export function MainLayout() {
         />
       </AppShell.Navbar>
       <AppShell.Main>
-        <AppMain><Outlet /></AppMain>
+        <AppMain>
+          <Outlet />
+        </AppMain>
       </AppShell.Main>
       <AppShell.Footer p="md">
         <Container fluid px="lg">

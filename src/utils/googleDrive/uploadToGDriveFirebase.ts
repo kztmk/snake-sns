@@ -151,7 +151,7 @@ export async function uploadFileToGoogleDrive(
     const metadata = {
       name: file.name,
       mimeType: file.type,
-      // parents: ['YOUR_FOLDER_ID'] // 特定のフォルダに入れたい場合
+      parents: [folderId], // 特定のフォルダに入れたい場合
     };
 
     const form = new FormData();

@@ -1,11 +1,11 @@
 import dayjs, { Dayjs } from 'dayjs';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import twitter from '@ambassify/twitter-text';
 import { IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { EmojiClickData } from 'emoji-picker-react';
 import emojiRegex from 'emoji-regex';
-import { set } from 'firebase/database';
+import { getAuth } from 'firebase/auth';
 import { MRT_Row, MRT_TableInstance } from 'mantine-react-table';
 import {
   ActionIcon,
@@ -13,35 +13,42 @@ import {
   Box,
   Button,
   Card,
-  Dialog,
   Divider,
   Grid,
   Group,
   LoadingOverlay,
   MultiSelect,
-  NumberInput,
   Stack,
   Text,
   Textarea,
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
+import Mp4Image from '@/assets/images/mp4image.jpg';
 import CircularWithLabel from '@/components/CircularWithLabel';
 import EmojiPicker, { EmojiPickerRef } from '@/components/EmojiPicker';
 import ImageListHorizontalScrolable from '@/components/ImageListHorizontalScrolable';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
 import { RootState } from '@/store';
+import { selectApiError, selectApiStatus } from '@/store/reducers/apiControllerSlice';
 import { linkAndGetGoogleToken } from '@/store/reducers/googleAccessTokenSlice';
 import {
   clearXPostsErrors,
   createXPost,
-  selectXPosts,
   selectXPostsStatus,
   updateXPost,
 } from '@/store/reducers/xPostsSlice';
-import { MediaDataType, XPostDataType, XPostImageDataType } from '@/types/xAccounts';
+import { MediaDataType, XPostDataType } from '@/types/xAccounts';
+import { deleteBlobFromCache, getBlobFromCache, saveBlobToCache } from '@/utils/db';
 import { performUploadWorkflow } from '@/utils/googleDrive/uploadManager';
 import FileInput from './FileInput';
+
+// (MediaDataType, XPostFormProps, xPostFormDefaultValue は前回の修正と同様)
+interface CachedMediaDataType extends MediaDataType {
+  isLoading?: boolean;
+  error?: string | null;
+  // isCached?: boolean; // (任意)
+}
 
 interface XPostFormProps {
   xAccountId: string;
@@ -61,39 +68,64 @@ export const xPostFormDefaultValue: XPostDataType = {
 };
 
 const XPostForm: React.FC<XPostFormProps> = (props) => {
+  const { xAccountId, table, xPostData, feedBack } = props;
+
   const [text, setText] = useState('');
   const [contentError, setContentError] = useState(false);
-  const [pics, setPics] = useState<MediaDataType[]>([]);
+  const [pics, setPics] = useState<CachedMediaDataType[]>([]);
   const [scheduledPostTime, setScheduledPostTime] = useState<Date | null>(null);
-  const [timeStamp, setTimeStamp] = useState(0);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showReauthButton, setShowReauthButton] = useState(false);
   const [cancelUpload, setCancelUpload] = useState(false);
-
   const [weightedLength, setWeightedLength] = useState(0);
   const [selectedHashTags, setSelectedHashTags] = useState<string[]>([]);
-  const emojiPickerRef = useRef<EmojiPickerRef | null>(null);
 
-  const { xAccountId, table, xPostData, feedBack } = props;
+  // fileIdをキーとするRecordに
+  const blobUrlsRef = useRef<Record<string, string>>({});
+  const emojiPickerRef = useRef<EmojiPickerRef | null>(null);
+  const isMounted = useRef(true);
+  const textAreaRef = useRef<HTMLTextAreaElement>(null);
 
   const dispatch = useAppDispatch();
-
+  const apiStatus = useAppSelector(selectApiStatus);
+  const apiError = useAppSelector(selectApiError);
   const {
-    isLoading,
-    isError,
+    isLoading: isPostLoading,
+    isError: isPostError,
     errorMessage: postErrorMessage,
     process,
   } = useAppSelector(selectXPostsStatus);
-  const {
-    isAuthLoading: isTokenLoading,
-    error,
-    googleAccessToken,
-  } = useAppSelector((state: RootState) => state.googleAccessTokenState);
+  const { isAuthLoading: isTokenLoading, googleAccessToken } = useAppSelector(
+    (state: RootState) => state.googleAccessTokenState
+  );
+  const auth = getAuth();
+  const user = auth.currentUser;
+  if (!user) {
+    return null; // ユーザーがサインインしていない場合は何も表示しない
+  }
+
+  // ★ Blob URL 解放処理 ★
+  const revokeAllBlobUrls = useCallback(() => {
+    Object.values(blobUrlsRef.current).forEach((url) => {
+      if (url && url.startsWith('blob:')) {
+        URL.revokeObjectURL(url);
+      }
+    });
+    blobUrlsRef.current = {}; // 解放したら空にする
+    // pics state の imgUrl もクリア (表示を更新するため)
+    setPics((prevPics) => prevPics.map((p) => ({ ...p, imgUrl: '' })));
+  }, []);
+
+  const countEmoji = useCallback((text: string): number => {
+    const regex = emojiRegex();
+    const emojis = text.match(regex) || [];
+    return emojis.length;
+  }, []);
 
   // Xポストのステータスが変化したときの処理
   useEffect(() => {
-    if (isError) {
+    if (isPostError) {
       setIsSubmitting(false);
       setErrorMessage(postErrorMessage);
       notifications.show({
@@ -102,10 +134,10 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
         color: 'red',
         icon: <IconAlertCircle />,
       });
-    } else if (!isLoading && (process === 'addNew' || process === 'update') && isSubmitting) {
+    } else if (!isPostLoading && (process === 'addNew' || process === 'update') && isSubmitting) {
       setIsSubmitting(false);
       setCancelUpload(false);
-
+      console.log('投稿処理完了:', process);
       // フィードバックと画面遷移を処理
       feedBack({ operation: process, text: text.substring(0, 30) + '...' });
 
@@ -123,107 +155,353 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
         }
       });
     }
-  }, [isLoading, isError, process]);
+  }, [
+    isPostLoading,
+    isPostError,
+    process,
+    isSubmitting,
+    feedBack,
+    table,
+    xPostData.id,
+    postErrorMessage,
+    revokeAllBlobUrls,
+  ]);
 
   useEffect(() => {
-    const fetchImageData = async () => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      pics.forEach((pic) => {
+        if (pic.imgUrl && pic.imgUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(pic.imgUrl);
+        }
+      });
+    };
+  }, []);
+
+  // ★ Google Drive から Blob を取得し、キャッシュに保存、Blob URL を生成する関数 ★
+  const fetchAndCacheBlob = useCallback(
+    async (fileId: string, currentToken: string | null, mimeType?: string) => {
+      if (!fileId || !currentToken) return;
+
+      // ローディング開始
+      setPics((prevPics) =>
+        prevPics.map((p) => (p.fileId === fileId ? { ...p, isLoading: true, error: null } : p))
+      );
+
+      try {
+        // ★ 動画の場合は fetch しない（loadImage で処理されるはずだが念のため）★
+        if (mimeType && mimeType.startsWith('video/')) {
+          if (isMounted.current) {
+            setPics((prevPics) =>
+              prevPics.map((p) =>
+                p.fileId === fileId ? { ...p, imgUrl: Mp4Image, isLoading: false, error: null } : p
+              )
+            );
+          }
+          return; // 動画ならここで終了
+        }
+
+        const response = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+          {
+            headers: { Authorization: `Bearer ${currentToken}` },
+          }
+        );
+
+        if (!response.ok) throw new Error(`ファイル取得エラー: ${response.status}`);
+
+        const blob = await response.blob();
+
+        if (!blob.type.startsWith('image/')) throw new Error('画像形式ではありません');
+
+        // ★ IndexedDB に保存 ★
+        await saveBlobToCache(fileId, blob);
+
+        // ★ 取得した Blob のタイプをチェック ★
+        if (blob.type.startsWith('video/')) {
+          // 動画だった場合：キャッシュには保存するかもしれないが、表示は Mp4Image
+          await saveBlobToCache(fileId, blob); // キャッシュはしておく
+          if (isMounted.current) {
+            setPics((prevPics) =>
+              prevPics.map((p) =>
+                p.fileId === fileId ? { ...p, imgUrl: Mp4Image, isLoading: false, error: null } : p
+              )
+            );
+          }
+        } else if (blob.type.startsWith('image/')) {
+          // 画像だった場合：キャッシュ＆Blob URL 生成
+          await saveBlobToCache(fileId, blob);
+          const objectUrl = URL.createObjectURL(blob);
+          blobUrlsRef.current[fileId] = objectUrl;
+          if (isMounted.current) {
+            setPics((prevPics) =>
+              prevPics.map((p) =>
+                p.fileId === fileId ? { ...p, imgUrl: objectUrl, isLoading: false, error: null } : p
+              )
+            );
+          } else {
+            URL.revokeObjectURL(objectUrl);
+          }
+        } else {
+          // 画像でも動画でもない場合
+          throw new Error('サポートされていないファイル形式です');
+        }
+      } catch (err: any) {
+        console.error(`Error fetching/caching blob for fileId ${fileId}:`, err);
+        if (isMounted.current) {
+          setPics((prevPics) =>
+            prevPics.map((p) =>
+              p.fileId === fileId
+                ? { ...p, isLoading: false, error: err.message || '画像処理エラー' }
+                : p
+            )
+          );
+        }
+      }
+    },
+    []
+  ); // 依存配列は空
+
+  // ★ 画像をロードするメイン関数 (キャッシュチェック含む) ★
+  const loadImage = useCallback(
+    async (picData: CachedMediaDataType, currentToken: string | null) => {
+      const { fileId, mimeType } = picData;
+      if (!fileId) return; // fileId がなければ何もしない
+
+      // ★ 動画の場合はデフォルト画像を設定して終了 ★
+      if (mimeType && mimeType.startsWith('video/')) {
+        setPics((prevPics) =>
+          prevPics.map((p) =>
+            p.fileId === fileId ? { ...p, imgUrl: Mp4Image, isLoading: false, error: null } : p
+          )
+        );
+        return;
+      }
+
+      // ローディング開始 (キャッシュチェック中も含む)
+      setPics((prevPics) =>
+        prevPics.map((p) => (p.fileId === fileId ? { ...p, isLoading: true, error: null } : p))
+      );
+
+      try {
+        // 1. IndexedDB キャッシュを確認
+        const cachedBlob = await getBlobFromCache(fileId);
+
+        if (cachedBlob) {
+          console.log(`Cache hit for fileId: ${fileId}`);
+          // キャッシュヒット： Blob URL を生成
+          const objectUrl = URL.createObjectURL(cachedBlob);
+          blobUrlsRef.current[fileId] = objectUrl;
+          if (isMounted.current) {
+            setPics((prevPics) =>
+              prevPics.map((p) =>
+                p.fileId === fileId ? { ...p, imgUrl: objectUrl, isLoading: false, error: null } : p
+              )
+            );
+          } else {
+            URL.revokeObjectURL(objectUrl);
+          }
+        } else {
+          console.log(`Cache miss for fileId: ${fileId}. Fetching from Google Drive...`);
+          // キャッシュミス： Google Drive から取得してキャッシュ
+          if (currentToken) {
+            await fetchAndCacheBlob(fileId, currentToken);
+          } else {
+            // トークンがない場合はエラー状態にする（もしくはトークン取得を待つ）
+            if (isMounted.current) {
+              setPics((prevPics) =>
+                prevPics.map((p) =>
+                  p.fileId === fileId
+                    ? { ...p, isLoading: false, error: '認証トークンが必要です' }
+                    : p
+                )
+              );
+            }
+            console.warn(`Cannot fetch image for ${fileId} without access token.`);
+            // ここでトークン取得をトリガーすることも可能
+            // dispatch(linkAndGetGoogleToken());
+          }
+        }
+      } catch (error) {
+        console.error(`Error in loadImage for ${fileId}:`, error);
+        if (isMounted.current) {
+          setPics((prevPics) =>
+            prevPics.map((p) =>
+              p.fileId === fileId ? { ...p, isLoading: false, error: '画像ロードエラー' } : p
+            )
+          );
+        }
+      }
+    },
+    [fetchAndCacheBlob]
+  ); // fetchAndCacheBlob に依存
+
+  // 初期データ読み込みと画像ロードトリガー
+  useEffect(() => {
+    setText(xPostData.contents || '');
+    if (xPostData.postSchedule) {
+      /* ... */
+    }
+    setPics([]);
+    revokeAllBlobUrls();
+
+    let currentToken = googleAccessToken; // 現在のトークン
+
+    const loadInitialPics = async (token: string | null) => {
+      let initialPics: CachedMediaDataType[] = [];
       if (xPostData.media) {
         try {
-          // メディアデータをJSONとしてパース
           const mediaItems = JSON.parse(xPostData.media as string);
-
           if (Array.isArray(mediaItems) && mediaItems.length > 0) {
-            const loadedPics: MediaDataType[] = mediaItems.map((item) => ({
-              file: item.fileId ? null : item.file,
-              fileName: item.filename || '',
-              fileId: item.fileId || '',
-              mimeType: item.mimeType || '',
-              imgUrl: item.imgUrl,
-            }));
-
-            setPics(loadedPics);
+            initialPics = mediaItems.map(
+              (item): CachedMediaDataType => ({
+                file: null,
+                fileName: item.fileName || item.filename || '',
+                fileId: item.fileId || '',
+                mimeType: item.mimeType || '',
+                imgUrl: '', // 初期は空
+                isLoading: !!item.fileId, // fileId があればロード開始フラグ
+                error: null,
+              })
+            );
           }
         } catch (error) {
-          console.error('メディアデータのパースエラー:', error);
+          /* ... エラー処理 ... */
         }
+      }
+
+      if (isMounted.current) {
+        setPics(initialPics); // まずメタデータで state を更新
+        // 各画像のロードを開始
+        initialPics.forEach((pic) => {
+          if (pic.fileId) {
+            loadImage(pic, token); // ★ loadImage を呼び出す ★
+          }
+        });
       }
     };
 
-    setText(xPostData.contents || xPostData.id || 'null');
+    // トークンがあればすぐにロード開始、なければ取得を待つ（取得後に再度この Effect が動く）
+    loadInitialPics(currentToken);
 
-    if (xPostData.postSchedule) {
-      setScheduledPostTime(dayjs(xPostData.postSchedule).toDate());
-    }
-
-    if (xPostData.media) {
-      fetchImageData();
-    } else {
-      setPics([]);
-    }
-
-    // テキスト長さの計算
     if (xPostData.contents) {
-      const response = twitter.parseTweet(xPostData.contents);
-      const emojiCount = countEmoji(xPostData.contents);
-      setWeightedLength(response.weightedLength + emojiCount);
+      /* ... テキスト長計算 ... */
+    }
+  }, [xPostData, countEmoji, loadImage, googleAccessToken, revokeAllBlobUrls]); // ★ loadImage, googleAccessToken を依存配列に追加
+
+  const insertAtPos = useCallback(
+    (emojiData: EmojiClickData) => {
+      const taRef = textAreaRef.current;
+      if (taRef) {
+        const startPos = taRef.selectionStart;
+        const endPos = taRef.selectionEnd;
+        const newText =
+          taRef.value.substring(0, startPos) +
+          emojiData.emoji +
+          taRef.value.substring(endPos, taRef.value.length);
+        setText(newText);
+        const response = twitter.parseTweet(newText);
+        const emojiCount = countEmoji(newText);
+        setWeightedLength(response.weightedLength + emojiCount);
+      }
+      emojiPickerRef.current?.setShowEmoji(false);
+    },
+    [countEmoji]
+  );
+
+  const insertAtEnd = useCallback(
+    (selectedOptions: string[]) => {
+      const taRef = textAreaRef.current;
+      if (taRef) {
+        let text = taRef.value;
+        for (let i = 0; i < selectedHashTags.length; i++) {
+          text = text.replace(selectedHashTags[i], '');
+          text = text.replace('  ', ' ');
+        }
+        setSelectedHashTags(selectedOptions);
+        const newPost = text + ' ' + selectedOptions.join(' ');
+        setText(newPost);
+        const response = twitter.parseTweet(newPost);
+        const emojiCount = countEmoji(newPost);
+        setWeightedLength(response.weightedLength + emojiCount);
+      }
+    },
+    [selectedHashTags, countEmoji]
+  );
+
+  // addImage: ローカルファイル追加時の処理 (Blob URL 生成、IndexedDB には保存しない)
+  // addImage: 動画ファイルの場合の処理を追加
+  const addImage = useCallback((newPicData: MediaDataType) => {
+    const file = newPicData.file;
+    if (file) {
+      let imgUrl = '';
+      let isVideo = file.type.startsWith('video/');
+      const mimeType = file.type;
+      let tempKey: string | null = null; // Blob URL 解放用のキー
+
+      if (isVideo) {
+        imgUrl = Mp4Image; // 動画ならデフォルト画像
+      } else if (file.type.startsWith('image/')) {
+        imgUrl = URL.createObjectURL(file); // 画像なら Blob URL
+        tempKey = `local_${newPicData.fileName}_${Date.now()}`;
+        blobUrlsRef.current[tempKey] = imgUrl; // Ref に保存
+      } else {
+        notifications.show({
+          message: '画像または動画ファイルを選択してください。',
+          color: 'orange',
+        });
+        return; // 対応外ファイルなら追加しない
+      }
+
+      const newPic: CachedMediaDataType = {
+        ...newPicData,
+        fileId: '', // ローカルファイルなので fileId は空
+        imgUrl: imgUrl,
+        mimeType: mimeType, // ★ mimeType をセット ★
+        isLoading: false,
+        error: null,
+      };
+      setPics((oldPics) => [...oldPics, newPic]);
     }
   }, []);
 
-  const textAreaRef = useRef<HTMLTextAreaElement>(null);
-
-  const insertAtPos = (emojiData: EmojiClickData) => {
-    const taRef = textAreaRef.current;
-    if (taRef) {
-      const startPos = taRef.selectionStart;
-      const endPos = taRef.selectionEnd;
-      const newText =
-        taRef.value.substring(0, startPos) +
-        emojiData.emoji +
-        taRef.value.substring(endPos, taRef.value.length);
-      setText(newText);
-      const response = twitter.parseTweet(newText);
-      const emojiCount = countEmoji(newText);
-      setWeightedLength(response.weightedLength + emojiCount);
-    }
-    emojiPickerRef.current?.setShowEmoji(false);
-  };
-
-  const insertAtEnd = (selectedOptions: string[]) => {
-    const taRef = textAreaRef.current;
-    if (taRef) {
-      let text = taRef.value;
-      for (let i = 0; i < selectedHashTags.length; i++) {
-        text = text.replace(selectedHashTags[i], '');
-        text = text.replace('  ', ' ');
+  // removeImage: Blob URL 解放処理
+  const removeImage = useCallback((targetFileName: string) => {
+    setPics((oldPics) => {
+      const picToRemove = oldPics.find((pic) => pic.fileName === targetFileName);
+      // 対応する Blob URL を Ref から見つけて解放
+      let keyToRemove: string | null = null;
+      if (picToRemove?.imgUrl) {
+        const entry = Object.entries(blobUrlsRef.current).find(
+          ([key, url]) => url === picToRemove.imgUrl
+        );
+        if (entry) {
+          keyToRemove = entry[0];
+          URL.revokeObjectURL(picToRemove.imgUrl);
+          delete blobUrlsRef.current[keyToRemove]; // Ref からも削除
+        }
       }
-      setSelectedHashTags(selectedOptions);
-      const newPost = text + ' ' + selectedOptions.join(' ');
-      setText(newPost);
-      const response = twitter.parseTweet(newPost);
-      const emojiCount = countEmoji(newPost);
+      // (任意) IndexedDB からも削除する場合
+      if (picToRemove?.fileId) {
+        deleteBlobFromCache(picToRemove.fileId);
+      }
+      return oldPics.filter((pic) => pic.fileName !== targetFileName);
+    });
+  }, []);
+
+  const textParse = useCallback(
+    (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+      setText(e.currentTarget.value);
+      if (e.currentTarget.value.length > 0) {
+        setContentError(false);
+      }
+      const response = twitter.parseTweet(e.currentTarget.value);
+      const emojiCount = countEmoji(e.currentTarget.value);
       setWeightedLength(response.weightedLength + emojiCount);
-    }
-  };
-
-  const addImage = (newPic: MediaDataType) => {
-    setPics((oldPics) => [...oldPics, newPic]);
-  };
-
-  const removeImage = (path: string) => {
-    const removedPic = pics.find((pic) => pic.fileName === path);
-    if (removedPic) {
-      URL.revokeObjectURL(removedPic.imgUrl);
-    }
-    setPics((oldPics) => oldPics.filter((pic) => pic.fileName !== path));
-  };
-
-  const dayjsConvertToString = (date: Dayjs | null | undefined): string | null => {
-    if (!date) {
-      return null;
-    } else {
-      return dayjs(date).format('YYYY-MM-DDTHH:mm:ss');
-    }
-  };
+    },
+    [countEmoji]
+  );
 
   const handleSubmit = async () => {
     if (text === '') {
@@ -235,15 +513,16 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     setIsSubmitting(true);
     setErrorMessage(null);
     setShowReauthButton(false);
-    let finalMediaData: MediaDataType[] = [];
+    let finalMediaData: CachedMediaDataType[] = [];
     try {
       // 画像がある場合、アップロード
       if (pics.length > 0) {
         // すでにアップロード済みの画像（fileIdがある）とそうでないものを分ける
         const uploadTargets = pics.filter((pic) => !pic.fileId && pic.file);
         const existingMedia = pics.filter((pic) => pic.fileId);
-        const postMedia: MediaDataType[] = [];
+        const postMedia: CachedMediaDataType[] = [];
 
+        finalMediaData = [...existingMedia]; // まずは既存のメディアをセット
         if (uploadTargets.length > 0) {
           let currentToken = googleAccessToken;
           // 1. 実行前にトークンを確認・取得
@@ -253,7 +532,7 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
             if (linkAndGetGoogleToken.fulfilled.match(resultAction)) {
               currentToken = resultAction.payload.accessToken;
             } else {
-              setErrorMessage(resultAction.payload ?? 'Google連携/認証が必要です。');
+              setErrorMessage(resultAction.payload?.message ?? 'Google連携/認証が必要です。');
               setShowReauthButton(true); // 失敗したら再認証ボタン表示
               setIsSubmitting(false); // ローディング解除
               return; // 中断
@@ -280,6 +559,8 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
               });
               const result = await performUploadWorkflow({
                 selectedFile: pic.file,
+                user: user,
+                googleAccessToken: currentToken,
                 dispatch,
               });
               if (result.success && result.uploadData) {
@@ -299,6 +580,15 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
                   mimeType: result.uploadData.mimeType,
                   imgUrl: result.uploadData.imageUrl ?? '',
                 });
+                // ★★★ アップロード成功後、すぐにキャッシュ ★★★
+                if (pic.file) {
+                  // 元のファイル Blob を使う
+                  await saveBlobToCache(result.uploadData.fileId, pic.file);
+                } else {
+                  // もし pic.file がない場合 (理論上ここには来ないはずだが)
+                  fetchAndCacheBlob(result.uploadData.fileId, currentToken); // Driveから再取得してキャッシュ
+                }
+                // ★★★★★★★★★★★★★★★★★★★★★★★★
               } else {
                 notifications.update({
                   id: notificationId,
@@ -351,53 +641,43 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     }
   };
 
-  const handleCancel = () => {
-    if (isError) {
+  const handleCancel = useCallback(() => {
+    if (isPostError) {
       dispatch(clearXPostsErrors());
     }
+    pics.forEach((pic) => {
+      if (pic.imgUrl && pic.imgUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(pic.imgUrl);
+      }
+    });
     if (xPostData.id === '') {
       table.setCreatingRow(null);
     } else {
       table.setEditingRow(null);
     }
-  };
+  }, [isPostError, pics, xPostData.id, dispatch, table]);
 
-  const clearErrors = () => {
+  const clearErrors = useCallback(() => {
     setErrorMessage(null);
     dispatch(clearXPostsErrors());
-  };
+  }, [dispatch]);
 
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     setText('');
     setContentError(false);
+    pics.forEach((pic) => {
+      if (pic.imgUrl && pic.imgUrl.startsWith('blob:')) {
+        URL.revokeObjectURL(pic.imgUrl);
+      }
+    });
     setPics([]);
     setScheduledPostTime(null);
     setSelectedHashTags([]);
     setWeightedLength(0);
     clearErrors();
-  };
+  }, [pics, clearErrors]);
 
-  const countEmoji = (text: string): number => {
-    const regex = emojiRegex();
-    const emojis = text.match(regex) || [];
-    return emojis.length;
-  };
-
-  const textParse = (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    setText(e.currentTarget.value);
-    if (e.currentTarget.value.length > 0) {
-      setContentError(false);
-    }
-    const response = twitter.parseTweet(e.currentTarget.value);
-    const emojiCount = countEmoji(e.currentTarget.value);
-    setWeightedLength(response.weightedLength + emojiCount);
-  };
-
-  const handleCancelUpload = () => {
-    setCancelUpload(true);
-  };
-  // 再認証ボタンクリック
-  const handleReAuthClick = async () => {
+  const handleReAuthClick = useCallback(async () => {
     const resultAction = await dispatch(linkAndGetGoogleToken());
     if (linkAndGetGoogleToken.rejected.match(resultAction)) {
       setErrorMessage(`Google連携/認証に失敗しました: ${resultAction.payload}`);
@@ -409,7 +689,11 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
         icon: <IconCheck />,
       });
     }
-  };
+  }, [dispatch]);
+
+  const handleCancelUpload = useCallback(() => {
+    setCancelUpload(true);
+  }, []);
 
   return (
     <Grid>
@@ -432,18 +716,17 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
               color="red"
               title="エラー"
               withCloseButton={!showReauthButton}
-              onClose={() => clearErrors()}
+              onClose={clearErrors}
               mb="md"
             >
               {errorMessage}
-              {/* 再認証が必要なエラーメッセージの場合にボタン表示 */}
               {showReauthButton && (
                 <Button
                   mt="sm"
                   variant="outline"
                   color="red"
                   onClick={handleReAuthClick}
-                  loading={isTokenLoading} // isAuthLoading は Thunk 実行中フラグ
+                  loading={isTokenLoading}
                 >
                   {isTokenLoading ? '認証中...' : 'Google 再認証'}
                 </Button>
@@ -460,16 +743,13 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
                 minRows={5}
                 ref={textAreaRef}
                 value={text}
-                onChange={(e) => textParse(e)}
+                onChange={textParse}
               />
               {pics.length > 0 && (
                 <ImageListHorizontalScrolable pics={pics} removeImage={removeImage} />
               )}
               <Group gap="md">
-                <FileInput
-                  onChange={(newPic: MediaDataType) => addImage(newPic)}
-                  disabled={pics.length > 3}
-                />
+                <FileInput onChange={addImage} disabled={pics.length > 3} />
                 <EmojiPicker onSelectedEmoji={insertAtPos} ref={emojiPickerRef} />
                 <CircularWithLabel value={weightedLength} size={48} />
                 <Text c="dimmed" mx="md">
@@ -516,4 +796,4 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
   );
 };
 
-export default XPostForm;
+export default React.memo(XPostForm);

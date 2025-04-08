@@ -56,6 +56,7 @@ export type XPostedDataType = {
 export type XPostListFetchStatus = {
   xAccountId: string;
   xPostList: XPostDataType[];
+  xPostListByXAccountId: XPostDataType[];
   xPost: XPostDataType;
   process: 'idle' | 'addNew' | 'update' | 'delete' | 'fetch';
   isLoading: boolean;
