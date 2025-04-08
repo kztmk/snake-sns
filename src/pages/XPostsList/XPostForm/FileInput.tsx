@@ -33,12 +33,15 @@ const FileInput: React.FC<FileInputProps> = ({ onChange, disabled }) => {
 
       const file = files[0];
       const path = file.name; // ファイル名をパスとして使用
+
       const imageData = {
         file: file,
         fileName: file.name,
         fileId: '',
-        webViewLink: '',
-        webContentLink: URL.createObjectURL(file),
+        imgUrl: '',
+        mimeType: '',
+        isLoading: false,
+        isError: false,
       };
 
       onChange(imageData);

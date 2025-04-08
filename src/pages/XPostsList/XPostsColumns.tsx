@@ -57,17 +57,33 @@ export const columns: MRT_ColumnDef<XPostDataType>[] = [
     },
     enableHiding: true,
     Cell: ({ row }) => {
-      if (row.original.media && JSON.parse(row.original.media).length > 0) {
-        const images = JSON.parse(row.original.media);
-        return (
-          <>
-            {images.map((_: void, index: number) => (
-              <span key={index}>🌟</span>
-            ))}
-          </>
-        );
-      } else {
+      if (!row.original.media) {
         return 'No Images';
+      }
+
+      try {
+        const mediaStr = row.original.media;
+        if (typeof mediaStr !== 'string' || mediaStr === '') {
+          return 'No Images';
+        }
+
+        const images = JSON.parse(mediaStr);
+        if (!Array.isArray(images) || images.length === 0) {
+          return 'No Images';
+        }
+
+        return (
+          <div style={{ display: 'flex', gap: '4px' }}>
+            {images.map((image, index) => (
+              <span key={index} title={image.fileName || `画像 ${index + 1}`}>
+                🌟
+              </span>
+            ))}
+          </div>
+        );
+      } catch (error) {
+        console.error('Media parse error:', error);
+        return '不正なメディア形式';
       }
     },
   },
@@ -85,7 +101,14 @@ export const columns: MRT_ColumnDef<XPostDataType>[] = [
     Cell: ({ row }) => {
       const postTime = row.original.postSchedule;
       if (postTime && postTime.length > 0) {
-        return dayjs(row.original.postSchedule).format('YYYY/MM/DD HH:mm');
+        let formattedTime = '';
+        try {
+          formattedTime = dayjs(row.original.postSchedule).format('YYYY/MM/DD HH:mm');
+          return formattedTime;
+        } catch (error) {
+          console.error('Error formatting date:', error);
+          return 'Invalid Date';
+        }
       } else {
         return '予約無し';
       }
@@ -101,5 +124,20 @@ export const columns: MRT_ColumnDef<XPostDataType>[] = [
       align: 'left',
     },
     enableHiding: true,
+    Cell: ({ row }) => {
+      const createAt = row.original.createdAt;
+      if (createAt && createAt.length > 0) {
+        let formattedTime = '';
+        try {
+          formattedTime = dayjs(row.original.createdAt).format('YYYY/MM/DD HH:mm');
+          return formattedTime;
+        } catch (error) {
+          console.error('Error formatting date:', error);
+          return 'Invalid Date';
+        }
+      } else {
+        return 'なし';
+      }
+    },
   },
 ];

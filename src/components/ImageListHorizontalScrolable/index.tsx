@@ -116,7 +116,7 @@ const ImageListHorizontalScrolable: React.FC<ImageListHorizontalScrolableProps> 
         {pics.map((pic) => (
           <Box key={uuidv4()} style={{ minWidth: '160px', height: '200px', position: 'relative' }}>
             <Image
-              src={pic.webContentLink}
+              src={pic.imgUrl}
               width="150px"
               height="auto"
               style={{ borderRadius: '15px', maxHeight: '200px' }}

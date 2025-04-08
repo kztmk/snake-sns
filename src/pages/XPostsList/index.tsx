@@ -31,10 +31,10 @@ import { ActionIcon, Box, Button, Group, Modal, Paper, Stack, Text, Tooltip } fr
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
-import { deleteXPost } from '@/store/reducers/xPostsSlice';
+import { deleteXPost, getXPostsByXAccountId } from '@/store/reducers/xPostsSlice';
 import { XPostDataType } from '@/types/xAccounts';
 import XPostForm, { xPostFormDefaultValue } from './XPostForm';
-//import XPostScheduleForm, { ScheduleData } from './xPostScheduleForm/ScheduleForm';
+import XPostScheduleForm from './XPostScheduleForm';
 import { columns } from './XPostsColumns';
 
 type XPostTableProps = {
@@ -74,17 +74,20 @@ const XPostTable = () => {
     inReplyToInternal: true,
     contents: true,
     media: true,
-    psotSchdule: true,
+    poarSchedule: true,
     createdAt: true,
   });
   const [rowSelection, setRowSelection] = useState<MRT_RowSelectionState>({});
   const [openScheduleDialog, setOpenScheduleDialog] = useState(false);
   const [openLogsDialog, setOpenLogsDialog] = useState(false);
   // xPosts.xPostListは全アカウントのPOSTデータを持っているので、xAccountIdでフィルタリングして表示する
-  const xPostList = useAppSelector((state) => state.xPosts.xPostList).filter(
-    (post) => post.postTo === xAccountId
-  );
+  const xPostList = useAppSelector((state) => state.xPosts.xPostListByXAccountId);
+
   const dispatch = useAppDispatch();
+
+  useEffect(() => {
+    dispatch(getXPostsByXAccountId(xAccountId));
+  }, [xAccountId]);
 
   // モーダル制御用のフック
   const [isDeleteModalOpen, { open: openDeleteModal, close: closeDeleteModal }] =
@@ -104,7 +107,7 @@ const XPostTable = () => {
         color: 'green',
         icon: <IconCheck size={16} />,
       });
-    } else if (operation === 'updated') {
+    } else if (operation === 'update') {
       notifications.show({
         title: 'ポスト更新成功',
         message: `ポスト"${text}"が正常に更新されました`,
@@ -165,14 +168,12 @@ const XPostTable = () => {
     download(csvConfig)(csv);
   };
 
-  // 一時的なハンドラー関数（コンソールログのみ）
-  const handlePostStep1 = () => {
-    console.log('clicked: handlePostStep1');
+  // 投稿スケジュール一括設定フォーム開く
+  const handleOpenScheduleDialog = () => {
+    setOpenScheduleDialog(true);
   };
 
-  const handleOpenScheduleDialog = () => {
-    console.log('clicked: handleOpenScheduleDialog');
-  };
+  // const handleSetSchedules =
 
   const handleClearSchedule = () => {
     console.log('clicked: handleClearSchedule');
@@ -254,21 +255,7 @@ const XPostTable = () => {
           <Button variant="outline" onClick={() => table.setCreatingRow(true)}>
             新規ポスト作成
           </Button>
-          <Tooltip label="Xへ予約投稿">
-            <Box>
-              <ActionIcon
-                onClick={handlePostStep1}
-                disabled={
-                  !table.getIsSomeRowsSelected() &&
-                  !table.getIsAllPageRowsSelected() &&
-                  !table.getIsAllRowsSelected()
-                }
-              >
-                <IconBrandX />
-              </ActionIcon>
-            </Box>
-          </Tooltip>
-          <Tooltip label="予約時刻をセット">
+          <Tooltip label="一括で予約時刻をセット">
             <Box>
               <ActionIcon
                 onClick={handleOpenScheduleDialog}
@@ -282,7 +269,7 @@ const XPostTable = () => {
               </ActionIcon>
             </Box>
           </Tooltip>
-          <Tooltip label="予約時刻を解除">
+          <Tooltip label="一括で予約時刻を解除">
             <Box>
               <ActionIcon
                 onClick={handleClearSchedule}
@@ -319,6 +306,7 @@ const XPostTable = () => {
         <Tooltip label="CSVファイルでエクスポート">
           <Box style={{ p: 0, m: 0 }}>
             <ActionIcon
+              variant="transparent"
               disabled={table.getPrePaginationRowModel().rows.length === 0}
               onClick={() => handleExportData(table.getPrePaginationRowModel().rows)}
             >
@@ -337,6 +325,11 @@ const XPostTable = () => {
     <Paper p="md" style={{ width: '100%', height: '100%' }}>
       <Text mb="md">アカウント名:{` @${xAccountId}`}</Text>
       <MantineReactTable table={table} />
+      <XPostScheduleForm
+        dialogOpen={openScheduleDialog}
+        setSchedule={() => {}}
+        onClose={() => setOpenScheduleDialog(false)}
+      />
       <Modal
         opened={isDeleteModalOpen}
         onClose={closeDeleteModal}

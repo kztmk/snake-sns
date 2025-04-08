@@ -7,6 +7,7 @@ import { XPostDataType, XPostListFetchStatus } from '@/types/xAccounts';
 const initialState: XPostListFetchStatus = {
   xAccountId: '',
   xPostList: [],
+  xPostListByXAccountId: [],
   xPost: {
     id: '',
     contents: '',
@@ -190,6 +191,11 @@ const xPostsSlice = createSlice({
   name: 'xPosts',
   initialState,
   reducers: {
+    getXPostsByXAccountId: (state, action: PayloadAction<string>) => {
+      const xAccountId = action.payload;
+      const xPostListByXAccountId = state.xPostList.filter((post) => post.postTo === xAccountId);
+      state.xPostListByXAccountId = xPostListByXAccountId;
+    },
     setCurrentXAccountId: (state, action: PayloadAction<string>) => {
       state.xAccountId = action.payload;
     },
@@ -234,6 +240,9 @@ const xPostsSlice = createSlice({
         state.isLoading = false;
         state.isError = false;
         state.xPostList.push(action.payload.post);
+        state.xPostListByXAccountId = state.xPostList.filter(
+          (post) => post.postTo === action.payload.xAccountId
+        );
       })
       .addCase(createXPost.rejected, (state, action) => {
         state.isLoading = false;
@@ -254,6 +263,9 @@ const xPostsSlice = createSlice({
         if (index !== -1) {
           state.xPostList[index] = action.payload.post;
         }
+        state.xPostListByXAccountId = state.xPostList.filter(
+          (post) => post.postTo === action.payload.xAccountId
+        );
       })
       .addCase(updateXPost.rejected, (state, action) => {
         state.isLoading = false;
@@ -277,6 +289,9 @@ const xPostsSlice = createSlice({
         } else {
           state.xPostList = state.xPostList.filter((post) => post.id !== action.payload.postId);
         }
+        state.xPostListByXAccountId = state.xPostList.filter(
+          (post) => post.postTo === action.payload.xAccountId
+        );
       })
       .addCase(deleteXPost.rejected, (state, action) => {
         state.isLoading = false;
@@ -286,7 +301,8 @@ const xPostsSlice = createSlice({
   },
 });
 
-export const { setCurrentXAccountId, clearXPostsErrors, resetXPost } = xPostsSlice.actions;
+export const { setCurrentXAccountId, clearXPostsErrors, resetXPost, getXPostsByXAccountId } =
+  xPostsSlice.actions;
 
 // セレクター
 export const selectXPosts = (state: RootState) => state.xPosts.xPostList;
