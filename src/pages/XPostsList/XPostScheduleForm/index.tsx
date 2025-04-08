@@ -97,7 +97,7 @@ const XPostScheduleForm: React.FC<XPostScheduleFormPropsType> = (props) => {
   };
 
   return (
-    <Modal opened={dialogOpen} onClose={close} title="投稿予約作成">
+    <Modal opened={dialogOpen} onClose={onClose} title="投稿予約作成">
       <Paper component="form" id="schedule-form" onSubmit={form.onSubmit(onSubmit)}>
         <Stack gap="md">
           <DateInput label="開始日" required {...form.getInputProps('startDate')} />

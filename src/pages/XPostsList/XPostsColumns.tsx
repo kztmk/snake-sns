@@ -125,8 +125,8 @@ export const columns: MRT_ColumnDef<XPostDataType>[] = [
     },
     enableHiding: true,
     Cell: ({ row }) => {
-      const createAt = row.original.createdAt;
-      if (createAt && createAt.length > 0) {
+      const createdAt = row.original.createdAt;
+      if (createdAt && createdAt.length > 0) {
         let formattedTime = '';
         try {
           formattedTime = dayjs(row.original.createdAt).format('YYYY/MM/DD HH:mm');

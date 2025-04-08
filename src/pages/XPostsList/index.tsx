@@ -74,7 +74,7 @@ const XPostTable = () => {
     inReplyToInternal: true,
     contents: true,
     media: true,
-    poarSchedule: true,
+    postSchedule: true,
     createdAt: true,
   });
   const [rowSelection, setRowSelection] = useState<MRT_RowSelectionState>({});
