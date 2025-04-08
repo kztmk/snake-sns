@@ -1,6 +1,6 @@
 import { Link as RouterLink } from 'react-router';
 import { Group, Text, UnstyledButton, UnstyledButtonProps } from '@mantine/core';
-import LogoImage from '@/assets/images/snake_icon512.png';
+import LogoImage from '@/assets/images/torai_icon512.png';
 import classes from './Logo.module.css';
 
 type LogoProps = {
@@ -21,7 +21,7 @@ const Logo = ({ to, showText = true, ...others }: LogoProps) => {
           width={showText ? 32 : 24}
           alt="design sparx logo"
         />
-        {showText && <Text fw={700}>Snake-SnS</Text>}
+        {showText && <Text fw={700}>虎威</Text>}
       </Group>
     </UnstyledButton>
   );

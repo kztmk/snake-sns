@@ -1,13 +1,7 @@
 // functions/src/index.ts
-
 import cors from 'cors'; // ★ cors パッケージをインポート
-
-// @ts-ignore
 import { logger } from 'firebase-functions'; // loggerもv2推奨
-
-// @ts-ignore
 import { onRequest } from 'firebase-functions/v2/https'; // v2からインポート
-
 import fetch from 'node-fetch'; // v2を使う (または axios など)
 
 // --- 設定 ---
@@ -16,7 +10,7 @@ import fetch from 'node-fetch'; // v2を使う (または axios など)
 const allowedOrigins: string[] = [
   // ★ 型定義を追加
   'http://localhost:5173', // ローカル開発環境 (Vite デフォルト)
-  'https://trai.imakita3gyo.com', // 本番カスタムドメイン
+  'https://torai.try-try.com', // 本番カスタムドメイン
   `https://${process.env.GCLOUD_PROJECT}.web.app`, // Firebase Hosting デフォルトドメイン
   // 他にも Firebase Hosting のプレビューURLなどを許可する場合は追加
 ];
@@ -24,10 +18,12 @@ const allowedOrigins: string[] = [
 // CORS ミドルウェアの設定 ★★★ この定義が必要です ★★★
 const corsHandler = cors({
   origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    logger.info('CORS check. Origin:', origin); // ★ ログに出力
     // ★ 型定義を追加
     // origin が undefined (サーバー間通信や同一オリジンなど) の場合も許可
     // または allowedOrigins に含まれる場合も許可
     if (!origin || allowedOrigins.includes(origin)) {
+      logger.info('Origin allowed:', origin); // ★ ログに出力
       callback(null, true);
     } else {
       logger.error('CORS Error: Origin not allowed:', origin);
@@ -56,13 +52,17 @@ export const proxyToGas = onRequest(
   (request, response) => {
     // ★ リクエストハンドラ
     // ★ corsHandler を最初に適用 ★
-    corsHandler(request, response, async () => {
-      // OPTIONS (プリフライト) リクエストの処理
-      // corsHandlerが適用された後なので、method が OPTIONS ならここで終了してOK
-      if (request.method === 'OPTIONS') {
-        response.status(204).send(''); // No Content
+    corsHandler(request, response, async (err?: any) => {
+      if (err) {
+        logger.error('CORS handler error:', err.message);
         return;
       }
+      // // OPTIONS (プリフライト) リクエストの処理
+      // // corsHandlerが適用された後なので、method が OPTIONS ならここで終了してOK
+      // if (request.method === 'OPTIONS') {
+      //   response.status(204).send(''); // No Content
+      //   return;
+      // }
 
       // POST メソッド以外の拒否
       if (request.method !== 'POST') {
@@ -70,6 +70,8 @@ export const proxyToGas = onRequest(
         response.status(405).send('Method Not Allowed');
         return;
       }
+
+      logger.info('Processing POST request:');
 
       // ターゲット GAS URL の取得と検証
       const targetGasUrlHeader = request.headers['x-target-gas-url'] as string;
@@ -85,21 +87,17 @@ export const proxyToGas = onRequest(
         return;
       }
 
-      // --- ★ クエリパラメータ処理を追加 ★ ---
+      // クエリパラメータ処理
       let finalTargetUrl = targetGasUrlHeader;
       try {
-        // request.url にはパスとクエリ文字列が含まれる (例: '/api/gas-proxy?action=create&target=trigger')
-        // ホスト名は適当なもので良いので、URLオブジェクトでパースする
         const requestUrl = new URL(
           request.url || '/',
           `http://${request.headers.host || 'localhost'}`
         );
-        const queryString = requestUrl.search; // クエリ文字列部分 (例: '?action=create&target=trigger') を取得
-
+        const queryString = requestUrl.search;
         if (queryString) {
-          // GAS URL に既に '?' があるか確認 (通常はないはず)
           const separator = targetGasUrlHeader.includes('?') ? '&' : '?';
-          finalTargetUrl = targetGasUrlHeader + separator + queryString.substring(1); // 先頭の '?' を除いて結合
+          finalTargetUrl = targetGasUrlHeader + separator + queryString.substring(1);
           logger.info(`Query parameters detected. Forwarding to: ${finalTargetUrl}`);
         } else {
           logger.info(`No query parameters detected. Forwarding to: ${finalTargetUrl}`);
@@ -108,25 +106,26 @@ export const proxyToGas = onRequest(
         logger.error('Error parsing request URL or query string:', urlError, {
           requestUrl: request.url,
         });
-        // クエリパラメータがおかしい場合でも、ベースURLへの転送を試みるか、エラーにするか選択
-        // ここではエラーにする
         response.status(400).json({ status: 'error', message: 'Invalid request URL format.' });
         return;
       }
-      // --- ★ クエリパラメータ処理ここまで ★ ---
+
       try {
         // GAS への転送処理
+        logger.info(`Proxying POST request to: ${finalTargetUrl}`);
         const gasResponse = await fetch(finalTargetUrl, {
           method: 'POST',
           headers: {
+            // クライアントから受け取った Content-Type を使用
             'Content-Type': request.get('Content-Type') || 'application/json',
+            // 他に必要なヘッダーがあればここに追加 (例: Authorization)
           },
-          body: JSON.stringify(request.body),
-          // redirect: 'follow',
-          // timeout: 30000, // 必要ならタイムアウト設定
+          body: JSON.stringify(request.body), // request.body を JSON 文字列化して送信
+          // redirect: 'follow', // GAS がリダイレクトする場合に必要
         });
 
-        // GAS からのレスポンスボディ取得・パース
+        logger.info(`Received response from GAS. Status: ${gasResponse.status}`);
+
         const responseText = await gasResponse.text();
         let responseData;
         try {
@@ -134,24 +133,37 @@ export const proxyToGas = onRequest(
         } catch (parseError) {
           logger.error(`Failed to parse GAS response as JSON from ${finalTargetUrl}.`, {
             status: gasResponse.status,
-            responsePreview: responseText.substring(0, 200),
+            responsePreview: responseText.substring(0, 500), // ログ出力を増やす
           });
+          // GAS からのレスポンスが JSON でない場合のエラーハンドリング改善
           response
-            .status(502)
-            .json({ status: 'error', message: 'Invalid response from target GAS service.' });
+            .status(502) // Bad Gateway
+            .json({
+              status: 'error',
+              message: 'Invalid or non-JSON response from target GAS service.',
+              gasStatus: gasResponse.status,
+              gasResponse: responseText.substring(0, 500), // クライアントにも一部返す (デバッグ用)
+            });
           return;
         }
 
-        // 正常レスポンスをクライアントへ返す
+        // GAS のステータスコードをそのままクライアントに返す
         response.status(gasResponse.status).json(responseData);
-      } catch (error) {
+      } catch (error: any) {
+        // エラー型を any または unknown に
         logger.error(`Error proxying request to ${finalTargetUrl}:`, error);
+        // エラーオブジェクトからメッセージを取得
+        const errorMessage = error instanceof Error ? error.message : 'Unknown proxy error.';
+        // スタックトレースもログに出力
+        if (error instanceof Error) {
+          logger.error('Stack trace:', error.stack);
+        }
         response.status(502).json({
           // Bad Gateway
           status: 'error',
-          message: `Failed to proxy request: ${error instanceof Error ? error.message : 'Unknown proxy error.'}`,
+          message: `Failed to proxy request: ${errorMessage}`,
         });
       }
-    }); // ★ corsHandler の呼び出しを閉じる
+    }); // corsHandler の呼び出しを閉じる
   }
 );

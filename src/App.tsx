@@ -1,3 +1,4 @@
+import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 

@@ -61,7 +61,7 @@ const createMockStore = (customXAccounts: XAccount[] = mockXAccounts) => {
       xAccounts: {
         xAccountList: customXAccounts,
         xAccount: emptyXAccount,
-        process: 'idle',
+        process: 'idle' as const,
         isLoading: false,
         isError: false,
         errorMessage: '',
@@ -119,7 +119,7 @@ export const Loading: Story = {
             xAccounts: {
               xAccountList: [],
               xAccount: emptyXAccount,
-              process: 'idle',
+              process: 'idle' as const,
               isLoading: true,
               isError: false,
               errorMessage: '',
@@ -146,7 +146,7 @@ export const Error: Story = {
             xAccounts: {
               xAccountList: [],
               xAccount: emptyXAccount,
-              process: 'idle',
+              process: 'idle' as const,
               isLoading: false,
               isError: true,
               errorMessage: 'データの取得に失敗しました',

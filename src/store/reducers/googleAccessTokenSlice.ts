@@ -1,6 +1,13 @@
 import { RootState } from '..'; // あなたのRootStateをインポート
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { getAuth, GoogleAuthProvider, linkWithPopup, OAuthCredential } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  linkWithPopup,
+  OAuthCredential,
+  signInWithPopup,
+  UserCredential,
+} from 'firebase/auth';
 
 // Stateの型を修正: accessTokenを文字列で保持
 export interface GoogleAccessTokenState {
@@ -15,56 +22,99 @@ const initialState: GoogleAccessTokenState = {
   error: null,
 };
 
+// 成功時の型定義 (必要に応じて調整)
 interface LinkTokenResult {
   accessToken: string;
 }
 
-export const linkAndGetGoogleToken = createAsyncThunk<
-  LinkTokenResult, // ★ 成功時の型を変更 (accessTokenを含むオブジェクト)
-  void,
-  { rejectValue: string; state: RootState }
->(
-  'googleAccessToken/linkAndGetGoogleToken', // アクション名の修正を推奨
-  async (_, { getState, rejectWithValue }) => {
-    // ★ thunkApiを展開
-    const state = getState();
-    const user = state.auth.user; // Firebase Authのユーザー情報を取得
+// エラー時の型定義 (より詳細にする場合)
+interface LinkTokenError {
+  message: string;
+  code?: string; // エラーコードを含めると便利
+}
 
-    if (!user) {
-      return rejectWithValue('ユーザーが認証されていません。');
+export const linkAndGetGoogleToken = createAsyncThunk<
+  LinkTokenResult,
+  void,
+  { rejectValue: LinkTokenError; state: RootState } // rejectValue の型を更新
+>(
+  'googleAccessToken/linkAndGetToken', // アクション名を変更
+  async (_, { getState, rejectWithValue }) => {
+    // thunkApi を展開
+    const state = getState();
+    // state.auth.user からではなく、直接 auth.currentUser を使うのが確実
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      // この Thunk が呼ばれる時点で currentUser が null なのは通常考えにくいが、ガードは残す
+      return rejectWithValue({ message: 'ユーザーがログインしていません。' });
     }
 
     const provider = new GoogleAuthProvider();
+    // ★★★ Drive スコープは必須 ★★★
     provider.addScope('https://www.googleapis.com/auth/drive.file');
+    // 他に必要なスコープがあれば追加
 
     try {
-      const auth = getAuth();
-      if (!auth.currentUser) {
-        // 通常は state.auth.user があれば currentUser も存在するはずだが念のため
-        return rejectWithValue('Firebase Authentication の currentUser が見つかりません。');
-      }
-      console.log('Attempting to link/re-authenticate with Google...');
-      const result = await linkWithPopup(auth.currentUser, provider);
-      const credential = GoogleAuthProvider.credentialFromResult(result);
+      // 1. ユーザーが既に Google とリンク済みか確認
+      const isLinked = currentUser.providerData.some(
+        (pd) => pd.providerId === GoogleAuthProvider.PROVIDER_ID
+      );
 
-      if (!credential?.accessToken) {
-        // ★ accessToken の存在をチェック
-        console.error('Credential or Access Token not found after linkWithPopup.');
-        return rejectWithValue('Google アクセストークンが取得できませんでした。');
+      let credentialResult: UserCredential | null = null;
+
+      if (isLinked) {
+        console.log(
+          'Google is already linked. Re-authenticating via signInWithPopup to get fresh token...'
+        );
+        // 2a. ★ リンク済みの場合: signInWithPopup で再認証し、新しいトークンを取得 ★
+        // 注意: signInWithPopup は auth オブジェクトに対して呼び出す
+        credentialResult = await signInWithPopup(auth, provider);
+        // signInWithPopup は既存のユーザーを再認証するだけで、リンク済みの状態は変わらない
+      } else {
+        console.log('Google is not linked. Linking via linkWithPopup...');
+        // 2b. ★ 未リンクの場合: linkWithPopup で現在のユーザーにリンク ★
+        // 注意: linkWithPopup は currentUser オブジェクトに対して呼び出す
+        credentialResult = await linkWithPopup(currentUser, provider);
       }
 
-      console.log('Google Access Token obtained successfully.');
-      // ★ accessToken を含むオブジェクトを返す ★
-      return {
-        accessToken: credential.accessToken,
-        // 有効期限は credential から直接取得できないため、ここでは返さない
-        // (もし必要なら、IDトークンをデコードするか、別途APIで確認する必要がある)
-      };
+      // 3. 成功した場合、アクセストークンを取得
+      if (credentialResult) {
+        // credentialFromResult はどちらのメソッドの結果にも使える
+        const credential = GoogleAuthProvider.credentialFromResult(credentialResult);
+        if (credential?.accessToken) {
+          const accessToken = credential.accessToken;
+          console.log('Successfully obtained/refreshed Google Access Token.');
+          return { accessToken }; // 成功: トークンを返す
+        }
+      }
+
+      // ここに来る場合は、認証は成功したがトークンが取得できなかったケース (通常は稀)
+      console.error('Authentication successful, but failed to get access token from credential.');
+      return rejectWithValue({ message: 'アクセストークンを取得できませんでした。' });
     } catch (error: any) {
-      console.error('Google Link/Auth Error:', error);
-      // 特定のエラーコードに基づいてメッセージを調整することも可能
-      // if (error.code === 'auth/credential-already-in-use') { ... }
-      return rejectWithValue(`Googleアカウント連携/認証エラー: ${error.message || '不明なエラー'}`);
+      console.error('Google Link/Auth Error in Thunk:', error);
+
+      // 4. エラーハンドリング
+      let errorMessage = `Google連携/認証エラー: ${error.message || error.code || '不明なエラー'}`;
+      if (error.code === 'auth/credential-already-in-use') {
+        // isLinked=false の場合にこのエラーが出たら、本当に他のアカウントに紐づいている
+        // isLinked=true の場合に signInWithPopup でこのエラーが出たら少し異常だが、
+        // メッセージは「選択したGoogleアカウントが別のFirebaseアカウントに紐づいている」ことを示す
+        errorMessage = 'この Google アカウントは別のアカウントで使用されています。';
+      } else if (
+        error.code === 'auth/popup-closed-by-user' ||
+        error.code === 'auth/cancelled-popup-request'
+      ) {
+        errorMessage = 'Google 認証ポップアップが閉じられました。';
+      } else if (error.code === 'auth/account-exists-with-different-credential') {
+        // 1メール1アカウント設定が有効で、Googleのメアドが既存の別プロバイダのメアドと一致した場合など
+        errorMessage = '同じメールアドレスを持つアカウントが別の方法で既に存在します。';
+      }
+      // 他にも Firebase Authentication のエラーコードに応じて詳細化可能
+
+      return rejectWithValue({ message: errorMessage, code: error.code });
     }
   }
 );
@@ -99,7 +149,7 @@ const googleAccessTokenSlice = createSlice({
         state.isAuthLoading = false;
         state.googleAccessToken = null; // ★ エラー時はクリア
         // state.googleAccessTokenExpiry = null;
-        state.error = action.payload ?? '不明なエラーが発生しました';
+        state.error = action.payload?.message ?? '不明なエラーが発生しました';
       });
   },
 });

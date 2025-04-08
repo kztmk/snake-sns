@@ -16,6 +16,8 @@ import { uploadFileToGoogleDrive, UploadSuccessResult } from './uploadToGDriveFi
 // 必要な引数を定義
 interface PerformUploadArgs {
   selectedFile: File;
+  user: User;
+  googleAccessToken: string;
   dispatch: AppDispatch; // Redux Dispatch関数
 }
 
@@ -29,9 +31,10 @@ interface PerformUploadResult {
 
 export const performUploadWorkflow = async ({
   selectedFile,
+  user,
+  googleAccessToken,
   dispatch,
 }: PerformUploadArgs): Promise<PerformUploadResult> => {
-  const { googleAccessToken } = useAppSelector((state: RootState) => state.googleAccessTokenState); // Reduxからトークンを取得
   let currentToken = googleAccessToken;
 
   // 1. トークンがない場合は取得を試みる
