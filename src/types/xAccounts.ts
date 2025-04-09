@@ -58,7 +58,15 @@ export type XPostListFetchStatus = {
   xPostList: XPostDataType[];
   xPostListByXAccountId: XPostDataType[];
   xPost: XPostDataType;
-  process: 'idle' | 'addNew' | 'update' | 'delete' | 'fetch';
+  process:
+    | 'idle'
+    | 'addNew'
+    | 'update'
+    | 'delete'
+    | 'fetch'
+    | 'updateSchedules'
+    | 'createMultiple'
+    | 'deleteMultiple';
   isLoading: boolean;
   isError: boolean;
   errorMessage: string;
@@ -69,4 +77,35 @@ export interface PostError {
   context: string;
   message: string;
   stack: string;
+}
+
+export interface PostScheduleUpdate {
+  id: string;
+  postSchedule: string; // ISO 8601 形式の文字列などを期待
+}
+
+export interface UpdateResult {
+  id: string;
+  status: 'updated' | 'not_found' | 'error';
+  message?: string;
+}
+
+export interface PostDeletion {
+  id: string;
+}
+
+export interface DeleteResult {
+  id: string;
+  status: 'deleted' | 'not_found' | 'error';
+  message?: string;
+}
+
+export interface XPostDataInput {
+  postTo: string;
+  contents: string;
+  media?: string;
+  postSchedule?: string; // 文字列形式を期待 (ISO 8601など)
+  inReplytoInternal?: string;
+  postId?: string;
+  inReplyToOnX?: string;
 }

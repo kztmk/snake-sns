@@ -1,4 +1,6 @@
 import dayjs, { Dayjs } from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 import { useEffect, useState } from 'react';
 import { createDecipheriv } from 'crypto';
 import {
@@ -12,6 +14,7 @@ import {
   IconTrashX,
 } from '@tabler/icons-react';
 import { download, generateCsv, mkConfig } from 'export-to-csv';
+import { set } from 'firebase/database';
 import { list } from 'firebase/storage';
 import {
   MantineReactTable,
@@ -31,10 +34,16 @@ import { ActionIcon, Box, Button, Group, Modal, Paper, Stack, Text, Tooltip } fr
 import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
-import { deleteXPost, getXPostsByXAccountId } from '@/store/reducers/xPostsSlice';
-import { XPostDataType } from '@/types/xAccounts';
+import {
+  deleteMultiple,
+  deleteXPost,
+  getXPostsByXAccountId,
+  updateSchedules,
+} from '@/store/reducers/xPostsSlice';
+import { PostDeletion, PostScheduleUpdate, XPostDataType } from '@/types/xAccounts';
+import DeletionConfirmationAlert, { DeletionConfirmationAlertProps } from './Alert';
 import XPostForm, { xPostFormDefaultValue } from './XPostForm';
-import XPostScheduleForm from './XPostScheduleForm';
+import XPostScheduleForm, { ScheduleData } from './XPostScheduleForm';
 import { columns } from './XPostsColumns';
 
 type XPostTableProps = {
@@ -42,6 +51,7 @@ type XPostTableProps = {
 };
 
 const combineDateTime = (date: Dayjs, time: Dayjs): Dayjs => {
+  // ローカルタイムゾーンの情報を保持して日時を組み合わせる
   const combinedDateTime = dayjs(date)
     .year(date.year())
     .month(date.month())
@@ -53,16 +63,21 @@ const combineDateTime = (date: Dayjs, time: Dayjs): Dayjs => {
   return combinedDateTime;
 };
 
-// const setTimeOnly = (time) => dayjs().hour(time.hour()).minute(time.minute()).second(time.second());
+const setTimeOnly = (time: Dayjs) =>
+  dayjs().hour(time.hour()).minute(time.minute()).second(time.second());
 
-// const isOverStopTime = (scheduleDateTime: Dayjs, stopTime: Dayjs): boolean => {
-//   const timeOfScheduleDateTime = setTimeOnly(scheduleDateTime);
-//   const timeOfStopTime = setTimeOnly(stopTime);
+const isOverStopTime = (scheduleDateTime: Dayjs, stopTime: Dayjs): boolean => {
+  const timeOfScheduleDateTime = setTimeOnly(scheduleDateTime);
+  const timeOfStopTime = setTimeOnly(stopTime);
 
-//   return timeOfScheduleDateTime.isAfter(timeOfStopTime);
-// };
+  return timeOfScheduleDateTime.isAfter(timeOfStopTime);
+};
 
 const XPostTable = () => {
+  // dayjsプラグインの初期化
+  dayjs.extend(utc);
+  dayjs.extend(timezone);
+
   const { xAccountId } = useParams<{ xAccountId: string }>();
   // xAccountIdが存在しない場合は早期リターン
   if (!xAccountId) {
@@ -79,21 +94,84 @@ const XPostTable = () => {
   });
   const [rowSelection, setRowSelection] = useState<MRT_RowSelectionState>({});
   const [openScheduleDialog, setOpenScheduleDialog] = useState(false);
-  const [openLogsDialog, setOpenLogsDialog] = useState(false);
+  const [alertProps, setAlertProps] = useState<DeletionConfirmationAlertProps>({
+    open: false,
+    onClose: () => setAlertProps({ ...alertProps, open: false }),
+    title: 'Xポスト削除確認',
+    message: '',
+    onConfirm: () => {},
+    confirmButtonText: '削除',
+    cancelButtonText: 'キャンセル',
+  });
   // xPosts.xPostListは全アカウントのPOSTデータを持っているので、xAccountIdでフィルタリングして表示する
   const xPostList = useAppSelector((state) => state.xPosts.xPostListByXAccountId);
 
   const dispatch = useAppDispatch();
+  const { isLoading, isError, errorMessage, process } = useAppSelector((state) => state.xPosts);
 
   useEffect(() => {
     dispatch(getXPostsByXAccountId(xAccountId));
   }, [xAccountId]);
 
+  // 非同期アクションの状態に応じた通知を表示
+  useEffect(() => {
+    // ローディング通知
+    if (isLoading) {
+      const loadingMessages: Record<string, string> = {
+        updateSchedules: '投稿スケジュールを更新中...',
+        deleteMultiple: '選択したポストを削除中...',
+        createMultiple: '複数のポストを作成中...',
+        deleteXPost: 'ポストを削除中...',
+      };
+
+      if (process && loadingMessages[process]) {
+        notifications.show({
+          id: `loading-${process}`,
+          title: '処理中',
+          message: loadingMessages[process],
+          color: 'blue',
+          loading: true,
+          autoClose: false,
+        });
+      }
+    } else {
+      // 完了通知
+      if (process) {
+        notifications.hide(`loading-${process}`);
+
+        if (isError) {
+          notifications.show({
+            title: 'エラー',
+            message: errorMessage || '処理中にエラーが発生しました',
+            color: 'red',
+          });
+        } else {
+          const successMessages: Record<string, string> = {
+            updateSchedules: '投稿スケジュールが正常に更新されました',
+            deleteMultiple: '選択したポストが正常に削除されました',
+            createMultiple: 'ポストが正常に作成されました',
+            deleteXPost: 'ポストが正常に削除されました',
+          };
+
+          if (successMessages[process]) {
+            notifications.show({
+              title: '完了',
+              message: successMessages[process],
+              color: 'green',
+              icon: <IconCheck size={16} />,
+            });
+          }
+          setRowSelection({}); // 選択状態をクリア
+        }
+      }
+    }
+  }, [isLoading, isError, process, errorMessage]);
+
   // モーダル制御用のフック
   const [isDeleteModalOpen, { open: openDeleteModal, close: closeDeleteModal }] =
     useDisclosure(false);
   const [currentPostToDelete, setCurrentPostToDelete] = useState<XPostDataType | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [singleDeleteLoading, setSingleDeleteLoading] = useState(false);
 
   const { xAccountList } = useAppSelector((state) => state.xAccounts);
   const xAccount = xAccountList.find((account) => account.id === xAccountId);
@@ -127,7 +205,6 @@ const XPostTable = () => {
   const handleDeletePost = async () => {
     if (!currentPostToDelete) return;
 
-    setIsLoading(true);
     try {
       if (!xAccountId) {
         throw new Error('Xアカウントが見つかりません');
@@ -147,8 +224,6 @@ const XPostTable = () => {
         message: '削除中にエラーが発生しました。',
         color: 'red',
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
@@ -173,14 +248,99 @@ const XPostTable = () => {
     setOpenScheduleDialog(true);
   };
 
-  // const handleSetSchedules =
+  // 投稿スケジュール一括設定
+  const handleSetSchedules = async (data: ScheduleData | null) => {
+    setOpenScheduleDialog(false);
+    if (data !== null) {
+      console.log('handleSetSchedules', data);
+      const updatedXPosts: PostScheduleUpdate[] = [];
+      let durationCount = 0;
+      let postDate = data.startDate;
+      for (let i = 0; i < table.getSelectedRowModel().flatRows.length; i++) {
+        let updatedPost: PostScheduleUpdate;
+        let row = table.getSelectedRowModel().flatRows[i];
+        // culculate post time
+        const caliculatedDurationMin = data.unit
+          ? data.duration * durationCount * 60
+          : data.duration * durationCount;
+        const scheduleDateTime = combineDateTime(dayjs(postDate), dayjs(data.startTime)).add(
+          caliculatedDurationMin,
+          'minute'
+        );
+        // compare culculated post time and end time
+        if (isOverStopTime(scheduleDateTime, dayjs(data.endTime))) {
+          // over end time then set next day
+          durationCount = 0;
+          postDate = postDate.add(1, 'day');
+          // check end date
+          if (postDate.isAfter(data.endDate)) {
+            break;
+          }
+          // set next day post time
+          const newScheduleDateTime = combineDateTime(dayjs(postDate), dayjs(data.startTime));
+          console.log('newScheduleDateTime', newScheduleDateTime);
+          // ローカルタイムゾーン情報を保持したまま保存する形式に変換
+          updatedPost = {
+            id: row.original.id || '',
+            postSchedule: newScheduleDateTime.format('YYYY-MM-DDTHH:mm:ssZ'),
+          };
+        } else {
+          // set post time same day
+          console.log('scheduleDateTime else', scheduleDateTime);
+          // ローカルタイムゾーン情報を保持したまま保存する形式に変換
+          updatedPost = {
+            id: row.original.id || '',
+            postSchedule: scheduleDateTime.format('YYYY-MM-DDTHH:mm:ssZ'),
+          };
+        }
+        updatedXPosts.push(updatedPost);
+        durationCount++;
+      }
+      table.setRowSelection({});
+      dispatch(updateSchedules({ xAccountId, scheduleUpdates: updatedXPosts }));
+    }
+  };
 
   const handleClearSchedule = () => {
-    console.log('clicked: handleClearSchedule');
+    // alert
+    setAlertProps({
+      open: true,
+      onClose: () => setAlertProps({ ...alertProps, open: false }),
+      title: '投稿スケジュール削除確認',
+      message:
+        '選択したポストの予約時刻を解除しますか？\n削除すると再度設定するまで投稿されません。',
+      onConfirm: () => {
+        const selectedRows = table.getSelectedRowModel().flatRows;
+        const updatedXPosts: PostScheduleUpdate[] = selectedRows.map((row) => ({
+          id: row.original.id || '',
+          postSchedule: '',
+        }));
+        dispatch(updateSchedules({ xAccountId, scheduleUpdates: updatedXPosts }));
+        setAlertProps({ ...alertProps, open: false });
+      },
+      confirmButtonText: '削除',
+      cancelButtonText: 'キャンセル',
+    });
   };
 
   const handleDeleteSelected = () => {
-    console.log('clicked: handleDeleteSelected');
+    console.log('handleDeleteSelected');
+    setAlertProps({
+      open: true,
+      onClose: () => setAlertProps({ ...alertProps, open: false }),
+      title: 'Xポスト削除確認',
+      message: '選択したポストを削除しますか？\n削除したポストは復元できません。',
+      onConfirm: () => {
+        const selectedRows = table.getSelectedRowModel().flatRows;
+        const deleteXPosts: PostDeletion[] = selectedRows.map((row) => ({
+          id: row.original.id || '',
+        }));
+        dispatch(deleteMultiple({ xAccountId, idsToDelete: deleteXPosts }));
+        setAlertProps({ ...alertProps, open: false });
+      },
+      confirmButtonText: '削除',
+      cancelButtonText: 'キャンセル',
+    });
   };
 
   const table = useMantineReactTable({
@@ -327,8 +487,17 @@ const XPostTable = () => {
       <MantineReactTable table={table} />
       <XPostScheduleForm
         dialogOpen={openScheduleDialog}
-        setSchedule={() => {}}
+        setSchedule={handleSetSchedules}
         onClose={() => setOpenScheduleDialog(false)}
+      />
+      <DeletionConfirmationAlert
+        open={alertProps.open}
+        onClose={alertProps.onClose}
+        title={alertProps.title}
+        message={alertProps.message}
+        onConfirm={alertProps.onConfirm}
+        confirmButtonText={alertProps.confirmButtonText}
+        cancelButtonText={alertProps.cancelButtonText}
       />
       <Modal
         opened={isDeleteModalOpen}

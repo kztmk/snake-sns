@@ -1,4 +1,6 @@
 import dayjs, { Dayjs } from 'dayjs';
+import timezone from 'dayjs/plugin/timezone';
+import utc from 'dayjs/plugin/utc';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import twitter from '@ambassify/twitter-text';
@@ -68,6 +70,10 @@ export const xPostFormDefaultValue: XPostDataType = {
 };
 
 const XPostForm: React.FC<XPostFormProps> = (props) => {
+  // dayjs プラグインの初期化
+  dayjs.extend(utc);
+  dayjs.extend(timezone);
+
   const { xAccountId, table, xPostData, feedBack } = props;
 
   const [text, setText] = useState('');
@@ -623,7 +629,10 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
         id: xPostData.id || '',
         contents: text,
         media: finalMediaData.length > 0 ? JSON.stringify(finalMediaData) : '',
-        postSchedule: scheduledPostTime ? scheduledPostTime.toISOString() : null,
+        // ローカルタイムゾーン情報を保持した形式で保存
+        postSchedule: scheduledPostTime
+          ? dayjs(scheduledPostTime).format('YYYY-MM-DDTHH:mm:ssZ')
+          : null,
         postTo: xAccountId || '',
         inReplyToInternal: xPostData.inReplyToInternal || '',
       };

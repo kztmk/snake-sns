@@ -65,7 +65,11 @@ const XPostScheduleFormWrapper = (args: { dialogOpen: boolean }) => {
           </pre>
         </div>
       )}
-      <XPostScheduleForm setSchedule={handleSetSchedule} dialogOpen={dialogOpen} />
+      <XPostScheduleForm
+        setSchedule={handleSetSchedule}
+        dialogOpen={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+      />
     </>
   );
 };
@@ -75,6 +79,12 @@ export const Default: Story = {
   render: (args) => <XPostScheduleFormWrapper {...args} />,
   args: {
     dialogOpen: false,
+    setSchedule: (data: ScheduleData | null) => {
+      console.log('Schedule set:', data);
+    },
+    onClose: () => {
+      console.log('Dialog closed');
+    },
   },
 };
 
@@ -83,5 +93,11 @@ export const OpenByDefault: Story = {
   render: (args) => <XPostScheduleFormWrapper {...args} />,
   args: {
     dialogOpen: true,
+    setSchedule: (data: ScheduleData | null) => {
+      console.log('Schedule set:', data);
+    },
+    onClose: () => {
+      console.log('Dialog closed');
+    },
   },
 };

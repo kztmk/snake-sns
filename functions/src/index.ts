@@ -44,7 +44,7 @@ const corsHandler = cors({
 export const proxyToGas = onRequest(
   {
     region: 'asia-northeast1', // 日本リージョン (必要に応じて変更)
-    memory: '128MiB', // メモリ割り当て (最小限で十分な場合が多い)
+    memory: '1GiB', // 処理量が多いためメモリ割り当てを1GBに増加
     // timeoutSeconds: 60,     // タイムアウト秒数 (デフォルトは60秒)
     // concurrency: 80,       // 同時実行数 (デフォルトは80)
     // secrets: []            // Secret Manager を使う場合
