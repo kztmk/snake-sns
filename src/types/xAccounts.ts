@@ -87,6 +87,7 @@ export interface PostScheduleUpdate {
 export interface UpdateResult {
   id: string;
   status: 'updated' | 'not_found' | 'error';
+  postSchedule: string;
   message?: string;
 }
 
