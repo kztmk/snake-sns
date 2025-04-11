@@ -1,7 +1,13 @@
 import { RootState } from '..';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { DeleteResult, UpdateResult, XPostDataType, XPostListFetchStatus } from '@/types/xAccounts';
+import {
+  DeleteResult,
+  UpdateInReplyToResult,
+  UpdateResult,
+  XPostDataType,
+  XPostListFetchStatus,
+} from '@/types/xAccounts';
 
 // XPostsスライスの初期状態
 const initialState: XPostListFetchStatus = {
@@ -314,6 +320,43 @@ export const createMultiplePost = createAsyncThunk<
   }
 });
 
+export const createThreadPosts = createAsyncThunk<
+  { xAccountId: string; results: UpdateInReplyToResult[] },
+  { xAccountId: string; threads: { id: string; inReplyToInternal: string }[] },
+  { rejectValue: string }
+>('xPosts/createThreadPosts', async (args, { getState, rejectWithValue }) => {
+  try {
+    const state = getState() as RootState;
+    const restUrl = state.auth.user?.googleSheetUrl;
+    if (!restUrl) {
+      return rejectWithValue('GoogleSheet URL が設定されていません');
+    }
+    const { xAccountId, threads } = args;
+    const requestData = { threads };
+
+    const response = await axios.post(PROXY_ENDPOINT, requestData, {
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Target-Gas-Url': restUrl,
+      },
+      params: {
+        action: 'updateInReplyTo',
+        target: 'postDate',
+      },
+    });
+
+    if (response.data.status === 'error') {
+      return rejectWithValue(response.data.message || 'スレッド投稿の作成に失敗しました');
+    }
+
+    return { xAccountId, results: response.data.data || [] };
+  } catch (error: any) {
+    return rejectWithValue(
+      error.response?.data?.message || error.message || 'スレッド投稿の作成中にエラーが発生しました'
+    );
+  }
+});
+
 // XPostsスライス
 const xPostsSlice = createSlice({
   name: 'xPosts',
@@ -506,6 +549,32 @@ const xPostsSlice = createSlice({
         state.isLoading = false;
         state.isError = true;
         state.errorMessage = action.payload as string;
+      })
+      // createThreadPosts
+      .addCase(createThreadPosts.pending, (state) => {
+        state.isLoading = true;
+        state.isError = false;
+        state.errorMessage = '';
+        state.process = 'createThreadPosts';
+      })
+      .addCase(createThreadPosts.fulfilled, (state, action) => {
+        state.isLoading = false;
+        state.isError = false;
+        // スレッド投稿の結果を反映
+        if (action.payload && action.payload.results) {
+          action.payload.results.forEach((item) => {
+            const index = state.xPostList.findIndex((post) => post.id === item.id);
+            if (index !== -1 && 'inReplyToInternal' in item) {
+              state.xPostList[index].inReplyToInternal = item.inReplyToInternal as string;
+            }
+          });
+        }
+        // 現在表示中のアカウントに関連する投稿を更新
+        if (state.xAccountId) {
+          state.xPostListByXAccountId = state.xPostList.filter(
+            (post) => post.postTo === state.xAccountId
+          );
+        }
       });
   },
 });
