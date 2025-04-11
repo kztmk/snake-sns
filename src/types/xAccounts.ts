@@ -66,7 +66,8 @@ export type XPostListFetchStatus = {
     | 'fetch'
     | 'updateSchedules'
     | 'createMultiple'
-    | 'deleteMultiple';
+    | 'deleteMultiple'
+    | 'createThreadPosts';
   isLoading: boolean;
   isError: boolean;
   errorMessage: string;
@@ -109,4 +110,11 @@ export interface XPostDataInput {
   inReplytoInternal?: string;
   postId?: string;
   inReplyToOnX?: string;
+}
+
+export interface UpdateInReplyToResult {
+  id: string;
+  status: 'updated' | 'not_found' | 'error';
+  inReplyToInternal: string;
+  message?: string;
 }
