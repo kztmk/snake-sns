@@ -2,7 +2,6 @@ import dayjs, { Dayjs } from 'dayjs';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
 import { useEffect, useState } from 'react';
-import { createDecipheriv } from 'crypto';
 import {
   IconBrandX,
   IconCheck,
@@ -10,12 +9,11 @@ import {
   IconClockX,
   IconDownload,
   IconPencil,
+  IconTransitionBottom,
   IconTrash,
   IconTrashX,
 } from '@tabler/icons-react';
 import { download, generateCsv, mkConfig } from 'export-to-csv';
-import { set } from 'firebase/database';
-import { list } from 'firebase/storage';
 import {
   MantineReactTable,
   MRT_Row,
@@ -42,6 +40,7 @@ import {
 } from '@/store/reducers/xPostsSlice';
 import { PostDeletion, PostScheduleUpdate, XPostDataType } from '@/types/xAccounts';
 import DeletionConfirmationAlert, { DeletionConfirmationAlertProps } from './Alert';
+import ThreadPosts from './ThreadPosts';
 import XPostForm, { xPostFormDefaultValue } from './XPostForm';
 import XPostScheduleForm, { ScheduleData } from './XPostScheduleForm';
 import { columns } from './XPostsColumns';
@@ -103,6 +102,8 @@ const XPostTable = () => {
     confirmButtonText: '削除',
     cancelButtonText: 'キャンセル',
   });
+  const [openThreadPostsDialog, setOpenThreadPostsDialog] = useState(false);
+  const [selectedPostsForThread, setSelectedPostsForThread] = useState<XPostDataType[]>([]);
   // xPosts.xPostListは全アカウントのPOSTデータを持っているので、xAccountIdでフィルタリングして表示する
   const xPostList = useAppSelector((state) => state.xPosts.xPostListByXAccountId);
 
@@ -111,6 +112,8 @@ const XPostTable = () => {
 
   useEffect(() => {
     dispatch(getXPostsByXAccountId(xAccountId));
+    setSelectedPostsForThread([]);
+    setRowSelection({}); // 選択状態をクリアs
   }, [xAccountId]);
 
   // 非同期アクションの状態に応じた通知を表示
@@ -121,7 +124,7 @@ const XPostTable = () => {
         updateSchedules: '投稿スケジュールを更新中...',
         deleteMultiple: '選択したポストを削除中...',
         createMultiple: '複数のポストを作成中...',
-        deleteXPost: 'ポストを削除中...',
+        delete: 'ポストを削除中...',
       };
 
       if (process && loadingMessages[process]) {
@@ -150,7 +153,7 @@ const XPostTable = () => {
             updateSchedules: '投稿スケジュールが正常に更新されました',
             deleteMultiple: '選択したポストが正常に削除されました',
             createMultiple: 'ポストが正常に作成されました',
-            deleteXPost: 'ポストが正常に削除されました',
+            delete: 'ポストが正常に削除されました',
           };
 
           if (successMessages[process]) {
@@ -166,15 +169,6 @@ const XPostTable = () => {
       }
     }
   }, [isLoading, isError, process, errorMessage]);
-
-  // モーダル制御用のフック
-  const [isDeleteModalOpen, { open: openDeleteModal, close: closeDeleteModal }] =
-    useDisclosure(false);
-  const [currentPostToDelete, setCurrentPostToDelete] = useState<XPostDataType | null>(null);
-  const [singleDeleteLoading, setSingleDeleteLoading] = useState(false);
-
-  const { xAccountList } = useAppSelector((state) => state.xAccounts);
-  const xAccount = xAccountList.find((account) => account.id === xAccountId);
 
   // モーダル操作後のフィードバック処理
   const handleFeedback = ({ operation, text }: { operation: string; text: string }) => {
@@ -196,35 +190,42 @@ const XPostTable = () => {
     }
   };
 
-  const openDeleteConfirmModal = (row: MRT_Row<XPostDataType>) => {
-    console.log('Clicked delete for row:', row.original);
-    setCurrentPostToDelete(row.original);
-    openDeleteModal();
-  };
+  // Row action button delete
+  const handleDeletePost = (row: MRT_Row<XPostDataType>) => {
+    if (!row.original) return;
+    const currentPostToDelete = row.original;
 
-  const handleDeletePost = async () => {
-    if (!currentPostToDelete) return;
-
-    try {
-      if (!xAccountId) {
-        throw new Error('Xアカウントが見つかりません');
-      }
-      await dispatch(deleteXPost({ xAccountId, postId: currentPostToDelete.id ?? '' }));
-      closeDeleteModal();
-      notifications.show({
-        title: '削除完了',
-        message: 'ポストの削除が完了しました。',
-        color: 'green',
-        icon: <IconCheck size={16} />,
-      });
-    } catch (error) {
-      console.error('Delete error:', error);
-      notifications.show({
-        title: 'エラー',
-        message: '削除中にエラーが発生しました。',
-        color: 'red',
-      });
-    }
+    setAlertProps({
+      open: true,
+      onClose: () => setAlertProps({ ...alertProps, open: false }),
+      title: 'Xポスト削除確認',
+      message: `ポスト「${currentPostToDelete.contents?.slice(0, 30)}...」を削除してもよろしいですか？`,
+      onConfirm: async () => {
+        try {
+          if (!xAccountId) {
+            throw new Error('Xアカウントが見つかりません');
+          }
+          await dispatch(deleteXPost({ xAccountId, postId: currentPostToDelete.id ?? '' }));
+          notifications.show({
+            title: '削除完了',
+            message: 'ポストの削除が完了しました。',
+            color: 'green',
+            icon: <IconCheck size={16} />,
+          });
+        } catch (error) {
+          console.error('Delete error:', error);
+          notifications.show({
+            title: 'エラー',
+            message: '削除中にエラーが発生しました。',
+            color: 'red',
+          });
+        } finally {
+          setAlertProps({ ...alertProps, open: false });
+        }
+      },
+      confirmButtonText: '削除',
+      cancelButtonText: 'キャンセル',
+    });
   };
 
   // csv config for import and export
@@ -301,6 +302,33 @@ const XPostTable = () => {
     }
   };
 
+  const handleThredPostsDialog = () => {
+    const selectedRows = table.getSelectedRowModel().flatRows;
+    const selectedPosts = selectedRows.map((row) => row.original);
+    setSelectedPostsForThread(selectedPosts);
+    setOpenThreadPostsDialog(true);
+  };
+
+  // TheadPosts
+  const handleThreadPosts = (threadPosts: XPostDataType[]) => {
+    const threads: { id: string; inReplyToInternal: string }[] = [];
+    for (let i = 0; i < threadPosts.length; i++) {
+      const threadPostsId = threadPosts[i].id;
+      let threadPostsInReplyToInternal;
+      if (i === 0) {
+        threadPostsInReplyToInternal = '';
+      } else {
+        threadPostsInReplyToInternal = threadPosts[i - 1].id;
+      }
+      threads.push({
+        id: threadPostsId || '',
+        inReplyToInternal: threadPostsInReplyToInternal || '',
+      });
+    }
+    console.log('handleThreadPosts', threads);
+  };
+
+  // 投稿スケジュール一括削除
   const handleClearSchedule = () => {
     // alert
     setAlertProps({
@@ -403,7 +431,7 @@ const XPostTable = () => {
           </ActionIcon>
         </Tooltip>
         <Tooltip label="削除">
-          <ActionIcon color="red" onClick={() => openDeleteConfirmModal(row)}>
+          <ActionIcon color="red" onClick={() => handleDeletePost(row)}>
             <IconTrash />
           </ActionIcon>
         </Tooltip>
@@ -415,6 +443,20 @@ const XPostTable = () => {
           <Button variant="outline" onClick={() => table.setCreatingRow(true)}>
             新規ポスト作成
           </Button>
+          <Tooltip label="スレッド投稿を作成">
+            <Box>
+              <ActionIcon
+                onClick={handleThredPostsDialog}
+                disabled={
+                  !table.getIsSomeRowsSelected() &&
+                  !table.getIsAllPageRowsSelected() &&
+                  !table.getIsAllRowsSelected()
+                }
+              >
+                <IconTransitionBottom />
+              </ActionIcon>
+            </Box>
+          </Tooltip>
           <Tooltip label="一括で予約時刻をセット">
             <Box>
               <ActionIcon
@@ -490,6 +532,12 @@ const XPostTable = () => {
         setSchedule={handleSetSchedules}
         onClose={() => setOpenScheduleDialog(false)}
       />
+      <ThreadPosts
+        open={openThreadPostsDialog}
+        onClose={() => setOpenThreadPostsDialog(false)}
+        posts={selectedPostsForThread}
+        onConfirm={() => handleThreadPosts(selectedPostsForThread)}
+      />
       <DeletionConfirmationAlert
         open={alertProps.open}
         onClose={alertProps.onClose}
@@ -499,29 +547,6 @@ const XPostTable = () => {
         confirmButtonText={alertProps.confirmButtonText}
         cancelButtonText={alertProps.cancelButtonText}
       />
-      <Modal
-        opened={isDeleteModalOpen}
-        onClose={closeDeleteModal}
-        title="Xポスト削除確認"
-        size="md"
-        styles={{
-          content: {
-            borderLeft: '4px solid red',
-          },
-        }}
-      >
-        <Text>
-          ポスト「{currentPostToDelete?.contents?.slice(0, 30)}...」を削除してもよろしいですか？
-        </Text>
-        <Group justify="end" mt="md">
-          <Button variant="outline" onClick={closeDeleteModal}>
-            キャンセル
-          </Button>
-          <Button color="red" onClick={handleDeletePost} loading={isLoading}>
-            削除
-          </Button>
-        </Group>
-      </Modal>
     </Paper>
   );
 };

@@ -8,6 +8,7 @@ import { IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
 import { EmojiClickData } from 'emoji-picker-react';
 import emojiRegex from 'emoji-regex';
 import { getAuth } from 'firebase/auth';
+import { set } from 'firebase/database';
 import { MRT_Row, MRT_TableInstance } from 'mantine-react-table';
 import {
   ActionIcon,
@@ -43,6 +44,8 @@ import {
 import { MediaDataType, XPostDataType } from '@/types/xAccounts';
 import { deleteBlobFromCache, getBlobFromCache, saveBlobToCache } from '@/utils/db';
 import { performUploadWorkflow } from '@/utils/googleDrive/uploadManager';
+// 既存のimport文
+import { BlobUrlManager, fetchAndCacheBlob, loadImage } from '@/utils/mediaCache';
 import FileInput from './FileInput';
 
 // (MediaDataType, XPostFormProps, xPostFormDefaultValue は前回の修正と同様)
@@ -111,17 +114,22 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     return null; // ユーザーがサインインしていない場合は何も表示しない
   }
 
+  // BlobURLマネージャーのインスタンスを作成
+  const blobUrlManager = useMemo(() => new BlobUrlManager(), []);
+  // コンポーネントのアンマウント時にBlobURLを解放
+  useEffect(() => {
+    return () => {
+      blobUrlManager.releaseAll();
+    };
+  }, [blobUrlManager]);
+
   // ★ Blob URL 解放処理 ★
+  // revokeAllBlobUrlsを置き換え
   const revokeAllBlobUrls = useCallback(() => {
-    Object.values(blobUrlsRef.current).forEach((url) => {
-      if (url && url.startsWith('blob:')) {
-        URL.revokeObjectURL(url);
-      }
-    });
-    blobUrlsRef.current = {}; // 解放したら空にする
+    blobUrlManager.releaseAll();
     // pics state の imgUrl もクリア (表示を更新するため)
     setPics((prevPics) => prevPics.map((p) => ({ ...p, imgUrl: '' })));
-  }, []);
+  }, [blobUrlManager]);
 
   const countEmoji = useCallback((text: string): number => {
     const regex = emojiRegex();
@@ -185,170 +193,53 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     };
   }, []);
 
-  // ★ Google Drive から Blob を取得し、キャッシュに保存、Blob URL を生成する関数 ★
-  const fetchAndCacheBlob = useCallback(
-    async (fileId: string, currentToken: string | null, mimeType?: string) => {
-      if (!fileId || !currentToken) return;
-
-      // ローディング開始
-      setPics((prevPics) =>
-        prevPics.map((p) => (p.fileId === fileId ? { ...p, isLoading: true, error: null } : p))
-      );
-
-      try {
-        // ★ 動画の場合は fetch しない（loadImage で処理されるはずだが念のため）★
-        if (mimeType && mimeType.startsWith('video/')) {
-          if (isMounted.current) {
-            setPics((prevPics) =>
-              prevPics.map((p) =>
-                p.fileId === fileId ? { ...p, imgUrl: Mp4Image, isLoading: false, error: null } : p
-              )
-            );
-          }
-          return; // 動画ならここで終了
-        }
-
-        const response = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-          {
-            headers: { Authorization: `Bearer ${currentToken}` },
-          }
-        );
-
-        if (!response.ok) throw new Error(`ファイル取得エラー: ${response.status}`);
-
-        const blob = await response.blob();
-
-        if (!blob.type.startsWith('image/')) throw new Error('画像形式ではありません');
-
-        // ★ IndexedDB に保存 ★
-        await saveBlobToCache(fileId, blob);
-
-        // ★ 取得した Blob のタイプをチェック ★
-        if (blob.type.startsWith('video/')) {
-          // 動画だった場合：キャッシュには保存するかもしれないが、表示は Mp4Image
-          await saveBlobToCache(fileId, blob); // キャッシュはしておく
-          if (isMounted.current) {
-            setPics((prevPics) =>
-              prevPics.map((p) =>
-                p.fileId === fileId ? { ...p, imgUrl: Mp4Image, isLoading: false, error: null } : p
-              )
-            );
-          }
-        } else if (blob.type.startsWith('image/')) {
-          // 画像だった場合：キャッシュ＆Blob URL 生成
-          await saveBlobToCache(fileId, blob);
-          const objectUrl = URL.createObjectURL(blob);
-          blobUrlsRef.current[fileId] = objectUrl;
-          if (isMounted.current) {
-            setPics((prevPics) =>
-              prevPics.map((p) =>
-                p.fileId === fileId ? { ...p, imgUrl: objectUrl, isLoading: false, error: null } : p
-              )
-            );
-          } else {
-            URL.revokeObjectURL(objectUrl);
-          }
-        } else {
-          // 画像でも動画でもない場合
-          throw new Error('サポートされていないファイル形式です');
-        }
-      } catch (err: any) {
-        console.error(`Error fetching/caching blob for fileId ${fileId}:`, err);
-        if (isMounted.current) {
-          setPics((prevPics) =>
-            prevPics.map((p) =>
-              p.fileId === fileId
-                ? { ...p, isLoading: false, error: err.message || '画像処理エラー' }
-                : p
-            )
-          );
-        }
-      }
-    },
-    []
-  ); // 依存配列は空
-
-  // ★ 画像をロードするメイン関数 (キャッシュチェック含む) ★
-  const loadImage = useCallback(
+  const handleLoadImage = useCallback(
     async (picData: CachedMediaDataType, currentToken: string | null) => {
       const { fileId, mimeType } = picData;
-      if (!fileId) return; // fileId がなければ何もしない
 
-      // ★ 動画の場合はデフォルト画像を設定して終了 ★
-      if (mimeType && mimeType.startsWith('video/')) {
-        setPics((prevPics) =>
-          prevPics.map((p) =>
-            p.fileId === fileId ? { ...p, imgUrl: Mp4Image, isLoading: false, error: null } : p
-          )
-        );
-        return;
-      }
-
-      // ローディング開始 (キャッシュチェック中も含む)
-      setPics((prevPics) =>
-        prevPics.map((p) => (p.fileId === fileId ? { ...p, isLoading: true, error: null } : p))
-      );
-
-      try {
-        // 1. IndexedDB キャッシュを確認
-        const cachedBlob = await getBlobFromCache(fileId);
-
-        if (cachedBlob) {
-          console.log(`Cache hit for fileId: ${fileId}`);
-          // キャッシュヒット： Blob URL を生成
-          const objectUrl = URL.createObjectURL(cachedBlob);
-          blobUrlsRef.current[fileId] = objectUrl;
+      return loadImage(fileId, currentToken, mimeType, {
+        onLoadingStart: (fileId) => {
+          setPics((prevPics) =>
+            prevPics.map((p) => (p.fileId === fileId ? { ...p, isLoading: true, error: null } : p))
+          );
+        },
+        onSuccess: (fileId, objectUrl) => {
           if (isMounted.current) {
+            if (objectUrl !== Mp4Image) {
+              blobUrlManager.addUrl(fileId, objectUrl);
+            }
             setPics((prevPics) =>
               prevPics.map((p) =>
                 p.fileId === fileId ? { ...p, imgUrl: objectUrl, isLoading: false, error: null } : p
               )
             );
-          } else {
+          } else if (objectUrl !== Mp4Image) {
             URL.revokeObjectURL(objectUrl);
           }
-        } else {
-          console.log(`Cache miss for fileId: ${fileId}. Fetching from Google Drive...`);
-          // キャッシュミス： Google Drive から取得してキャッシュ
-          if (currentToken) {
-            await fetchAndCacheBlob(fileId, currentToken);
-          } else {
-            // トークンがない場合はエラー状態にする（もしくはトークン取得を待つ）
-            if (isMounted.current) {
-              setPics((prevPics) =>
-                prevPics.map((p) =>
-                  p.fileId === fileId
-                    ? { ...p, isLoading: false, error: '認証トークンが必要です' }
-                    : p
-                )
-              );
-            }
-            console.warn(`Cannot fetch image for ${fileId} without access token.`);
-            // ここでトークン取得をトリガーすることも可能
-            // dispatch(linkAndGetGoogleToken());
+        },
+        onError: (fileId, error) => {
+          if (isMounted.current) {
+            setPics((prevPics) =>
+              prevPics.map((p) =>
+                p.fileId === fileId ? { ...p, isLoading: false, error: String(error) } : p
+              )
+            );
           }
-        }
-      } catch (error) {
-        console.error(`Error in loadImage for ${fileId}:`, error);
-        if (isMounted.current) {
-          setPics((prevPics) =>
-            prevPics.map((p) =>
-              p.fileId === fileId ? { ...p, isLoading: false, error: '画像ロードエラー' } : p
-            )
-          );
-        }
-      }
+        },
+      });
     },
-    [fetchAndCacheBlob]
-  ); // fetchAndCacheBlob に依存
+    []
+  );
 
   // 初期データ読み込みと画像ロードトリガー
   useEffect(() => {
     setText(xPostData.contents || '');
     if (xPostData.postSchedule) {
-      /* ... */
+      setScheduledPostTime(new Date(xPostData.postSchedule));
+    } else {
+      setScheduledPostTime(null);
     }
+
     setPics([]);
     revokeAllBlobUrls();
 
@@ -373,7 +264,7 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
             );
           }
         } catch (error) {
-          /* ... エラー処理 ... */
+          console.error('Error parsing media items:', error);
         }
       }
 
@@ -382,7 +273,7 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
         // 各画像のロードを開始
         initialPics.forEach((pic) => {
           if (pic.fileId) {
-            loadImage(pic, token); // ★ loadImage を呼び出す ★
+            handleLoadImage(pic, token); // 修正: handleLoadImage を使用
           }
         });
       }
@@ -393,8 +284,9 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
 
     if (xPostData.contents) {
       /* ... テキスト長計算 ... */
+      setWeightedLength(twitter.parseTweet(xPostData.contents).weightedLength);
     }
-  }, [xPostData, countEmoji, loadImage, googleAccessToken, revokeAllBlobUrls]); // ★ loadImage, googleAccessToken を依存配列に追加
+  }, [xPostData, countEmoji, handleLoadImage, googleAccessToken, revokeAllBlobUrls]); // ★ loadImage, googleAccessToken を依存配列に追加
 
   const insertAtPos = useCallback(
     (emojiData: EmojiClickData) => {
