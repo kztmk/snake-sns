@@ -1,20 +1,24 @@
-import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
+import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import {
+  getAdditionalUserInfo,
   getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
+  signInWithPopup,
+  Unsubscribe,
   updatePassword,
   updateProfile,
+  User,
 } from 'firebase/auth';
-import { ref as dbRef, get, getDatabase, set } from 'firebase/database';
-import { getDownloadURL, getStorage, ref, uploadBytes } from 'firebase/storage';
+import { ref as dbRef, get, getDatabase, set as setRTDB } from 'firebase/database';
+import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { auth, database, db, firebaseApp, storage } from '@/firebase';
+import { UserFirestoreData } from '@/types/auth';
 import { translateFirebaseAuthError } from '@/utils/firebaseUtils';
-import firebaseApp from '../../firebase';
-import type { RootState } from '../index';
-
-const auth = getAuth(firebaseApp);
-const database = getDatabase(firebaseApp);
-const storage = getStorage(firebaseApp);
+import type { AppDispatch, RootState } from '../index';
 
 const getFileExtension = (file: File): string => {
   const fileName = file.name;
@@ -65,6 +69,8 @@ export interface AppUser {
   dmmAffiliateId?: string;
   dmmApiId?: string;
   googleSheetUrl?: string;
+  termsAccepted: boolean | null;
+  isNewUser?: boolean;
 }
 
 export interface AppAuth {
@@ -81,8 +87,8 @@ const initialState: AppAuth = {
     displayName: null,
     role: null,
     photoURL: null,
-    avatarUrl: null,
-    backgroundImageUrl: null,
+    avatarUrl: defaultAvatarUrl,
+    backgroundImageUrl: defaultBackgroundImageUrl,
     chatGptApiKey: '',
     geminiApiKey: '',
     anthropicApiKey: '',
@@ -92,11 +98,15 @@ const initialState: AppAuth = {
     dmmAffiliateId: '',
     dmmApiId: '',
     googleSheetUrl: '',
+    termsAccepted: false,
+    isNewUser: false,
   },
-  loading: false,
+  loading: true,
   error: null,
   task: null,
 };
+
+// -- Async Thunks --
 
 export const signIn = createAsyncThunk<
   AppUser,
@@ -104,61 +114,223 @@ export const signIn = createAsyncThunk<
   { rejectValue: string }
 >('auth/signIn', async (args, thunkApi) => {
   try {
-    const appUser: AppUser = {
-      uid: null,
-      email: null,
-      displayName: null,
-      role: null,
-      photoURL: null,
-      avatarUrl: null,
-      backgroundImageUrl: null,
-    };
     const response = await signInWithEmailAndPassword(auth, args.email, args.password);
-    if (response.user) {
-      appUser.uid = response.user.uid;
-      appUser.email = response.user.email;
-      appUser.displayName = response.user.displayName;
-      appUser.photoURL = response.user.photoURL;
+    const user = response.user;
+    if (!user) {
+      return thunkApi.rejectWithValue('User not found');
     }
-    console.log(`login: ${appUser.uid}`);
-    const userRef = dbRef(database, `user-data/${response.user.uid}/profile`);
-    const snapshot = await get(userRef);
-    console.log(`getSnapshot`);
-    if (!snapshot.exists()) {
-      if (!snapshot.val()) {
-        console.log('setDefault');
-        appUser.role = '';
-        appUser.avatarUrl = defaultAvatarUrl;
-        appUser.backgroundImageUrl = defaultBackgroundImageUrl;
-      }
+    // Firestoreから規約同意状態を取得
+    const userDocRef = doc(db, 'users', user.uid);
+    const userDocSnap = await getDoc(userDocRef);
+    let termsAccepted = false;
+    let firestoreDataExists = false;
+
+    if (userDocSnap.exists()) {
+      firestoreDataExists = true;
+      const data = userDocSnap.data() as UserFirestoreData;
+      // termsAcceptedがboolean型ならその値、そうでない場合はfalseを代入
+      termsAccepted = typeof data.termsAccepted === 'boolean' ? data.termsAccepted : false;
     } else {
-      const data = snapshot.val();
-      appUser.role = data.role ?? '';
-      appUser.avatarUrl = data.avatarUrl ?? defaultAvatarUrl;
-      appUser.backgroundImageUrl = data.backgroundImageUrl ?? defaultBackgroundImageUrl;
+      // Firestoreにdataがない場合、作成（メールユーザーも規約同意が必要)
+      console.log(
+        `Firestore document for user ${user.uid} not found. Creating with termsAccepted: false`
+      );
+      await setDoc(userDocRef, { termsAccepted: false, createdAt: serverTimestamp() });
+      termsAccepted = false;
     }
 
-    const settingsRef = dbRef(database, `user-data/${response.user.uid}/settings`);
-    const settingsSnapshot = await get(settingsRef);
-    if (settingsSnapshot.exists()) {
-      const data = settingsSnapshot.val();
-      console.log(`googleSheetUrl: ${data.googleSheetUrl}`);
-      appUser.chatGptApiKey = data.chatGptApiKey ?? '';
-      appUser.geminiApiKey = data.geminiApiKey ?? '';
-      appUser.anthropicApiKey = data.anthropicApiKey ?? '';
-      appUser.rakutenAppId = data.rakutenAppId ?? '';
-      appUser.amazonAccessKey = data.amazonAccessKey ?? '';
-      appUser.amazonSecretKey = data.amazonSecretKey ?? '';
-      appUser.dmmAffiliateId = data.dmmAffiliateId ?? '';
-      appUser.dmmApiId = data.dmmApiId ?? '';
-      appUser.googleSheetUrl = data.googleSheetUrl ?? '';
+    // RTDBからProfile,Settingsを取得
+    const profileRef = dbRef(database, `user-data/${user.uid}/profile`);
+    const settingsRef = dbRef(database, `user-data/${user.uid}/settings`);
+
+    const [profileSnapshot, settingsSnapshot] = await Promise.all([
+      get(profileRef),
+      get(settingsRef),
+    ]);
+
+    const profileData = profileSnapshot.exists() ? profileSnapshot.val() : null;
+    const settingsData = settingsSnapshot.exists() ? settingsSnapshot.val() : null;
+
+    // RTDB profileがなければデフォルト値を設定
+    if (!profileSnapshot.exists()) {
+      console.log(`RTDB profile for user ${user.uid} not found. Creating with default values`);
+      await setRTDB(profileRef, {
+        role: '',
+        avatarUrl: defaultAvatarUrl,
+        backgroundImageUrl: defaultBackgroundImageUrl,
+      });
+      profileData.role = '';
+      profileData.avatarUrl = defaultAvatarUrl;
+      profileData.backgroundImageUrl = defaultBackgroundImageUrl;
     }
 
+    const appUser: AppUser = {
+      uid: user.uid,
+      email: user.email,
+      displayName: user.displayName,
+      photoURL: user.photoURL, // Authの情報を優先
+      role: profileData.role ?? '',
+      avatarUrl: profileData.avatarUrl ?? defaultAvatarUrl,
+      backgroundImageUrl: profileData.backgroundImageUrl ?? defaultBackgroundImageUrl,
+      chatGptApiKey: settingsData.chatGptApiKey ?? '',
+      geminiApiKey: settingsData.geminiApiKey ?? '',
+      anthropicApiKey: settingsData.anthropicApiKey ?? '',
+      rakutenAppId: settingsData.rakutenAppId ?? '',
+      amazonAccessKey: settingsData.amazonAccessKey ?? '',
+      amazonSecretKey: settingsData.amazonSecretKey ?? '',
+      dmmAffiliateId: settingsData.dmmAffiliateId ?? '',
+      dmmApiId: settingsData.dmmApiId ?? '',
+      googleSheetUrl: settingsData.googleSheetUrl ?? '',
+      termsAccepted: termsAccepted, // Firestoreから取得した値
+    };
+    console.log(`Sign in successful for user ${user.uid}, Terms Accepted: ${termsAccepted}`);
     return appUser;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
+    console.log('Sign in error:', error);
     const errorMessage = translateFirebaseAuthError(error);
     return thunkApi.rejectWithValue(errorMessage);
+  }
+});
+
+// signInWithGoogle
+export const signInWithGoogle = createAsyncThunk<AppUser, void, { rejectValue: string }>(
+  'auth/signInWithGoogle',
+  async (_, thunkApi) => {
+    const googleProvider = new GoogleAuthProvider();
+    try {
+      const result = await signInWithPopup(auth, googleProvider);
+      const user = result.user;
+      const additionalUserInfo = getAdditionalUserInfo(result);
+      const isNewUser = additionalUserInfo?.isNewUser ?? false;
+      console.log(`Google sign in: ${user.uid}, New user: ${isNewUser}`);
+
+      // Firestoreのユーザードキュメント参照 & 規約状態確認/設定
+      const userDocRef = doc(db, 'users', user.uid);
+      let termsAccepted: boolean = false;
+      let firestoreDataExists = false;
+
+      const userDocSnap = await getDoc(userDocRef);
+
+      if (userDocSnap.exists()) {
+        firestoreDataExists = true;
+        const data = userDocSnap.data() as UserFirestoreData;
+        termsAccepted = typeof data.termsAccepted === 'boolean' ? data.termsAccepted : false;
+      }
+
+      if (isNewUser || !firestoreDataExists) {
+        // 新規ユーザー or Firestoreにドキュメントがない場合、作成/上書き
+        console.log(
+          `New Google user or Firestore doc missing for ${user.uid}. Setting termsAccepted: false.`
+        );
+        await setDoc(
+          userDocRef,
+          {
+            termsAccepted: false, // 新規ユーザーは未同意
+            createdAt: serverTimestamp(),
+            email: user.email, // 任意: Auth情報をFirestoreにも保存
+            displayName: user.displayName, // 任意
+          },
+          { merge: true }
+        ); // merge:true で既存フィールドを保持しつつ上書き/作成
+        termsAccepted = false;
+      } else if (typeof (userDocSnap.data() as UserFirestoreData)?.termsAccepted !== 'boolean') {
+        // FirestoreにドキュメントはあるがtermsAcceptedがない/型が違う場合、更新
+        console.log(
+          `Firestore doc for ${user.uid} missing/invalid termsAccepted. Setting to false.`
+        );
+        await updateDoc(userDocRef, { termsAccepted: false });
+        termsAccepted = false;
+      }
+
+      // RTDBからProfileとSettingsを取得 & 新規ユーザーなら作成
+      const profileRef = dbRef(database, `user-data/${user.uid}/profile`);
+      const settingsRef = dbRef(database, `user-data/${user.uid}/settings`);
+
+      const [profileSnapshot, settingsSnapshot] = await Promise.all([
+        get(profileRef),
+        get(settingsRef),
+      ]);
+
+      let profileData = profileSnapshot.exists() ? profileSnapshot.val() : {};
+      const settingsData = settingsSnapshot.exists() ? settingsSnapshot.val() : {};
+
+      // 新規Googleユーザーの場合、RTDB Profile も作成
+      if (isNewUser || !profileSnapshot.exists()) {
+        console.log(
+          `New Google user or RTDB profile missing for ${user.uid}. Creating RTDB profile.`
+        );
+        profileData = {
+          // profileDataオブジェクトを更新
+          role: '', // デフォルトロール
+          avatarUrl: user.photoURL ?? defaultAvatarUrl, // Googleの画像を初期値に
+          backgroundImageUrl: defaultBackgroundImageUrl,
+        };
+        await setRTDB(profileRef, profileData);
+      }
+      // 新規Googleユーザーの場合、RTDB Settings も空で作成 (任意、APIキー保存時に作成されるのを待っても良い)
+      if (isNewUser || !settingsSnapshot.exists()) {
+        console.log(
+          `New Google user or RTDB settings missing for ${user.uid}. Creating empty RTDB settings.`
+        );
+        await setRTDB(settingsRef, {}); // 空のオブジェクトで作成
+      }
+
+      // AppUserオブジェクトを作成して返す
+      const appUser: AppUser = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName,
+        photoURL: user.photoURL, // GoogleログインなのでAuthのPhotoURLを使う
+        role: profileData.role ?? '',
+        avatarUrl: profileData.avatarUrl ?? user.photoURL ?? defaultAvatarUrl, // RTDB -> Auth -> Default の順でフォールバック
+        backgroundImageUrl: profileData.backgroundImageUrl ?? defaultBackgroundImageUrl,
+        chatGptApiKey: settingsData.chatGptApiKey ?? '',
+        geminiApiKey: settingsData.geminiApiKey ?? '',
+        anthropicApiKey: settingsData.anthropicApiKey ?? '',
+        rakutenAppId: settingsData.rakutenAppId ?? '',
+        amazonAccessKey: settingsData.amazonAccessKey ?? '',
+        amazonSecretKey: settingsData.amazonSecretKey ?? '',
+        dmmAffiliateId: settingsData.dmmAffiliateId ?? '',
+        dmmApiId: settingsData.dmmApiId ?? '',
+        googleSheetUrl: settingsData.googleSheetUrl ?? '',
+        termsAccepted: termsAccepted, // Firestoreから取得/設定した値
+        isNewUser: isNewUser, // 新規ユーザーかどうかのフラグ
+      };
+
+      console.log(
+        `Google Sign in successful for ${user.uid}, Terms Accepted: ${termsAccepted}, New User: ${isNewUser}`
+      );
+      return appUser;
+    } catch (error: any) {
+      console.error('Google sign-in error:', error);
+      const errorMessage = translateFirebaseAuthError(error);
+      return thunkApi.rejectWithValue(errorMessage);
+    }
+  }
+);
+
+// acceptTerms - Firestoreの規約同意状態を更新
+export const acceptTerms = createAsyncThunk<
+  { termsAccepted: boolean }, // 成功時に返す型
+  void, // 引数の型
+  { state: RootState; rejectValue: string } // thunkApiの型
+>('auth/acceptTerms', async (_, thunkApi) => {
+  const uid = thunkApi.getState().auth.user?.uid;
+  if (!uid) {
+    console.error('Accept terms failed: User not authenticated.');
+    return thunkApi.rejectWithValue('User not authenticated.');
+  }
+  try {
+    const userDocRef = doc(db, 'users', uid);
+    await updateDoc(userDocRef, {
+      termsAccepted: true,
+    });
+    console.log(`Terms accepted for user ${uid}.`);
+    return { termsAccepted: true };
+  } catch (error: any) {
+    console.error('Error accepting terms:', error);
+    return thunkApi.rejectWithValue(error.message || 'Failed to accept terms.');
   }
 });
 
@@ -192,7 +364,7 @@ export const affiliateKeySave = createAsyncThunk<
         googleSheetUrl: appUser.googleSheetUrl ?? '',
         ...newValues,
       };
-      await set(settingsRef, userSettings);
+      await setRTDB(settingsRef, userSettings);
       return {
         rakutenAppId: userSettings.rakutenAppId ?? '',
         amazonAccessKey: userSettings.amazonAccessKey ?? '',
@@ -215,54 +387,230 @@ export const affiliateKeySave = createAsyncThunk<
   }
 });
 
+// --- Auth State Listener Thunk ---
+export const listenAuthState =
+  () =>
+  (dispatch: AppDispatch): Unsubscribe => {
+    console.log('Starting auth state listener...');
+    dispatch(setLoading(true)); // 初期読み込み開始
+
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      console.log('Auth state changed. User:', user?.uid ?? 'null');
+      if (user) {
+        try {
+          // 認証ユーザーがいる場合、FirestoreとRTDBからデータを並列取得
+          const userDocRef = doc(db, 'users', user.uid);
+          const profileRef = dbRef(database, `user-data/${user.uid}/profile`);
+          const settingsRef = dbRef(database, `user-data/${user.uid}/settings`);
+
+          const [userDocSnap, profileSnapshot, settingsSnapshot] = await Promise.all([
+            getDoc(userDocRef),
+            get(profileRef),
+            get(settingsRef),
+          ]);
+
+          let userData: UserFirestoreData | null = null;
+          let termsAccepted: boolean | null = null;
+
+          if (userDocSnap.exists()) {
+            userData = userDocSnap.data() as UserFirestoreData;
+            termsAccepted =
+              typeof userData.termsAccepted === 'boolean' ? userData.termsAccepted : null;
+
+            // termsAcceptedがnullの場合、Firestoreにfalseで保存
+            if (termsAccepted === null) {
+              console.warn(
+                `User ${user.uid} Firestore data lacks a valid termsAccepted field. Setting to false.`
+              );
+              await updateDoc(userDocRef, { termsAccepted: false });
+              termsAccepted = false;
+            }
+          } else {
+            // Firestoreにドキュメントがない場合、作成
+            console.warn(
+              `User ${user.uid} Firestore document not found. Creating with termsAccepted: false`
+            );
+            await setDoc(
+              userDocRef,
+              { termsAccepted: false, createdAt: serverTimestamp() },
+              { merge: true }
+            );
+            termsAccepted = false;
+            userData = { termsAccepted: false }; // 初期値を設定
+          }
+
+          const profileData = profileSnapshot.exists() ? profileSnapshot.val() : null;
+          const settingsData = settingsSnapshot.exists() ? settingsSnapshot.val() : null;
+
+          // storeにユーザーデータを保存
+          dispatch(
+            setUser({
+              user,
+              userData: { ...userData, termsAccepted },
+              profileData,
+              settingsData,
+            })
+          );
+        } catch (error: any) {
+          console.error('Error fetching user data during auth state change:', error);
+          // エラーが発生しても基本的なAuth情報はセットする (ユーザーは認証されているため)
+          dispatch(setUser({ user, userData: null, profileData: null, settingsData: null }));
+          dispatch(setError('Failed to load user data.')); // エラー状態をセット
+        } finally {
+          dispatch(setLoading(false)); // データ取得試行完了
+        }
+      } else {
+        // 認証ユーザーがいない場合、初期状態に戻す
+        dispatch(setUser({ user: null }));
+        dispatch(setLoading(false)); // 認証状態の変更を通知
+      }
+    });
+
+    // リスナーのクリーンアップ関数を返す
+    return unsubscribe;
+  };
+
+// setUserアクション用のペイロード型定義
+interface SetUserPayload {
+  user: User | null; // Firebase Auth User
+  userData?: UserFirestoreData | null; // Firestore データ
+  profileData?: any | null; // RTDB Profile データ
+  settingsData?: any | null; // RTDB Settings データ
+}
+
+// --- Slie Difinition ---
 const authSlice = createSlice({
   name: 'auth',
   initialState,
   reducers: {
+    // stateを初期化
     initialize: (state) => {
+      console.log('Initializing auth state...');
       state.loading = false;
-      state.error = null;
-      state.task = null;
-      state.user = initialState.user;
+      Object.assign(state, initialState);
     },
+    // reset task & error
     resetTask: (state) => {
       state.task = null;
       state.error = null;
     },
+    // setLoading
+    setLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+    // set error message
+    setError: (state, action: PayloadAction<string | null>) => {
+      state.error = action.payload;
+      state.loading = false;
+    },
+    // onAuthStateChangedやログイン成功時にユーザー上布夫を設定
+    setUser: (state, action: PayloadAction<SetUserPayload>) => {
+      const { user, userData, profileData, settingsData } = action.payload;
+      if (user) {
+        console.log(`Setting user in Redux state: ${user.uid}`);
+        state.user = {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+          role: profileData?.role ?? state.user.role ?? '', // 既存stateもフォールバック
+          avatarUrl:
+            profileData?.avatarUrl ?? user.photoURL ?? state.user.avatarUrl ?? defaultAvatarUrl,
+          backgroundImageUrl:
+            profileData?.backgroundImageUrl ??
+            state.user.backgroundImageUrl ??
+            defaultBackgroundImageUrl,
+          chatGptApiKey: settingsData?.chatGptApiKey ?? state.user.chatGptApiKey ?? '',
+          geminiApiKey: settingsData?.geminiApiKey ?? state.user.geminiApiKey ?? '',
+          anthropicApiKey: settingsData?.anthropicApiKey ?? state.user.anthropicApiKey ?? '',
+          rakutenAppId: settingsData?.rakutenAppId ?? state.user.rakutenAppId ?? '',
+          amazonAccessKey: settingsData?.amazonAccessKey ?? state.user.amazonAccessKey ?? '',
+          amazonSecretKey: settingsData?.amazonSecretKey ?? state.user.amazonSecretKey ?? '',
+          dmmAffiliateId: settingsData?.dmmAffiliateId ?? state.user.dmmAffiliateId ?? '',
+          dmmApiId: settingsData?.dmmApiId ?? state.user.dmmApiId ?? '',
+          googleSheetUrl: settingsData?.googleSheetUrl ?? state.user.googleSheetUrl ?? '',
+          // termsAccepted は userData から、なければ null
+          termsAccepted: userData?.termsAccepted ?? null,
+          isNewUser: undefined, // isNewUser はThunkから直接渡さない
+        };
+        state.error = null; // ユーザーが設定されたらエラーはクリア
+      } else {
+        // ユーザーが null の場合、state を初期化
+        console.log('Setting user to null (logged out), initializing state.');
+        Object.assign(state, initialState);
+        state.loading = false; // 初期化完了
+      }
+      // setUser が呼ばれたら、基本的に loading は false にする (listenAuthState内で制御)
+      // state.loading = false; // listenAuthState内で別途制御するため、ここでは不要かも
+    },
   },
   extraReducers: (builder) => {
-    builder.addCase(signIn.pending, (state) => {
+    // common pending
+    const handlePending = (state: AppAuth) => {
       state.loading = true;
       state.error = null;
+      state.task = state.task ? `${state.task}_pending` : 'pending';
+    };
+    // common error
+    const handleRejected = (state: AppAuth, action: PayloadAction<any>) => {
+      state.loading = false;
+      // action.payloadが存在し、文字列であれば其れをエラーメッセージとして使用
+      state.error = typeof action.payload === 'string' ? action.payload : 'An error occurred';
+      state.task = state.task ? `${state.task}_error` : 'error';
+      console.log(`Auth operation failed: ${state.task}`, state.error);
+    };
+    // signIn(Email/Password)
+    builder.addCase(signIn.pending, (state) => {
+      handlePending(state);
+      state.task = 'signin';
     });
     builder.addCase(signIn.fulfilled, (state, action) => {
       const user = action.payload;
       state.loading = false;
-      state.user = {
-        uid: user.uid,
-        email: user.email,
-        role: user.role,
-        displayName: user.displayName,
-        photoURL: user.photoURL,
-        avatarUrl: user.avatarUrl,
-        backgroundImageUrl: user.backgroundImageUrl,
-        chatGptApiKey: user.chatGptApiKey,
-        geminiApiKey: user.geminiApiKey,
-        anthropicApiKey: user.anthropicApiKey,
-        rakutenAppId: user.rakutenAppId,
-        amazonAccessKey: user.amazonAccessKey,
-        amazonSecretKey: user.amazonSecretKey,
-        dmmAffiliateId: user.dmmAffiliateId,
-        dmmApiId: user.dmmApiId,
-        googleSheetUrl: user.googleSheetUrl,
-      };
+      state.user = action.payload;
+      state.task = 'signin_success';
+      state.error = null;
     });
     builder.addCase(signIn.rejected, (state, action) => {
-      state.loading = false;
-      state.error = action.payload === undefined ? 'An error occurred' : action.payload;
+      handleRejected(state, action);
+      state.user = initialState.user; // ログイン失敗時はユーザー情報を初期化
     });
+
+    // signInWithGoogle
+    builder.addCase(signInWithGoogle.pending, (state) => {
+      handlePending(state);
+      state.task = 'google_signin';
+    });
+    builder.addCase(signInWithGoogle.fulfilled, (state, action) => {
+      // isNewUser は payload に含まれるが、state.user には isNewUser フィールドはないので、他を設定
+      state.user = { ...action.payload, isNewUser: undefined };
+      state.loading = false;
+      state.error = null;
+      state.task = 'google_signin_success';
+    });
+    builder.addCase(signInWithGoogle.rejected, (state, action) => {
+      handleRejected(state, action);
+      state.user = initialState.user; // 失敗時は初期化
+    });
+
+    // --- acceptTerms ---
+    builder.addCase(acceptTerms.pending, (state) => {
+      handlePending(state);
+      state.task = 'accept_terms';
+    });
+    builder.addCase(acceptTerms.fulfilled, (state, action) => {
+      if (state.user) {
+        state.user.termsAccepted = action.payload.termsAccepted;
+      }
+      state.loading = false;
+      state.task = 'accept_terms_success';
+    });
+    builder.addCase(acceptTerms.rejected, handleRejected);
+
+    //
     builder.addCase(getUserProfile.pending, (state) => {
-      state.loading = true;
+      handlePending(state);
+      state.task = 'get_user_profile';
     });
     builder.addCase(getUserProfile.fulfilled, (state, action) => {
       state.loading = false;
@@ -272,27 +620,28 @@ const authSlice = createSlice({
         avatarUrl: action.payload.avatarUrl,
         backgroundImageUrl: action.payload.backgroundImageUrl,
       };
+      state.task = 'get_user_profile_success';
     });
-    builder.addCase(getUserProfile.rejected, (state, action) => {
-      state.loading = false;
-      state.error = action.payload === undefined ? 'An error occurred' : (action.payload as string);
-    });
+    builder.addCase(getUserProfile.rejected, handleRejected);
+
     builder.addCase(getProfileImages.pending, (state) => {
-      state.loading = true;
+      handlePending(state);
+      state.task = 'get_profile_images';
     });
     builder.addCase(getProfileImages.fulfilled, (state, action) => {
       if (state.user) {
-        state.loading = false;
         state.user.avatarUrl = action.payload.avatarUrl;
         state.user.backgroundImageUrl = action.payload.backgroundImageUrl;
       }
-    });
-    builder.addCase(getProfileImages.rejected, (state) => {
       state.loading = false;
+      state.task = 'get_profile_images_success';
     });
+    builder.addCase(getProfileImages.rejected, handleRejected);
+
+    // setProfile
     builder.addCase(setProfile.pending, (state) => {
-      state.loading = true;
-      state.task = null;
+      handlePending(state);
+      state.task = 'set_profile';
     });
     builder.addCase(setProfile.fulfilled, (state, action) => {
       state.loading = false;
@@ -302,55 +651,47 @@ const authSlice = createSlice({
         role: action.payload.role,
         avatarUrl: action.payload.avatarUrl,
         backgroundImageUrl: action.payload.backgroundImageUrl,
+        photoURL: action.payload.avatarUrl,
       };
-      state.task = 'update_profile';
+      state.task = 'set_profile_success';
     });
-    builder.addCase(setProfile.rejected, (state, action) => {
-      state.loading = false;
-      state.task = 'error_profile';
-      state.error = action.payload === undefined ? 'An error occurred' : (action.payload as string);
-    });
+    builder.addCase(setProfile.rejected, handleRejected);
+
+    // updateUserPassword
     builder.addCase(updateUserPassword.pending, (state) => {
-      state.loading = true;
-      state.task = null;
+      handlePending(state);
+      state.task = 'update_password';
     });
     builder.addCase(updateUserPassword.fulfilled, (state) => {
       state.loading = false;
-      state.task = 'update_password';
+      state.task = 'update_password_success';
     });
-    builder.addCase(updateUserPassword.rejected, (state, action) => {
-      state.loading = false;
-      state.task = 'error_password';
-      state.error = action.payload === undefined ? 'An error occurred' : (action.payload as string);
-    });
+    builder.addCase(updateUserPassword.rejected, handleRejected);
+
+    // signout
     builder.addCase(signOut.pending, (state) => {
-      state.loading = true;
+      handlePending(state);
+      state.task = 'signout';
     });
     builder.addCase(signOut.fulfilled, (state) => {
+      // initialize
+      Object.assign(state, initialState);
       state.loading = false;
-      state.user = {
-        uid: null,
-        email: null,
-        displayName: null,
-        role: null,
-        photoURL: null,
-        avatarUrl: null,
-        backgroundImageUrl: null,
-      };
-      state.task = null;
-      state.error = null;
+      state.task = 'signout_success';
     });
     builder.addCase(signOut.rejected, (state, action) => {
+      handleRejected(state, action);
+      Object.assign(state, initialState);
       state.loading = false;
-      state.error = action.payload === undefined ? 'An error occurred' : (action.payload as string);
     });
+    // saveApiKeys
     builder.addCase(saveApiKeys.pending, (state) => {
-      state.loading = true;
+      handlePending(state);
       state.task = 'save_api_keys';
     });
     builder.addCase(saveApiKeys.fulfilled, (state, action) => {
       state.loading = false;
-      state.task;
+      state.task = 'save_api_keys_success';
       state.user = {
         ...state.user,
         chatGptApiKey: action.payload.chatGptApiKey,
@@ -359,30 +700,25 @@ const authSlice = createSlice({
         googleSheetUrl: action.payload.googleSheetUrl,
       };
     });
-    builder.addCase(saveApiKeys.rejected, (state, action) => {
-      state.loading = false;
-      state.task = 'error_api_keys';
-      state.error = action.payload === undefined ? 'An error occurred' : (action.payload as string);
-    });
+    builder.addCase(saveApiKeys.rejected, handleRejected);
+
     builder.addCase(sendResetPasswordEmail.pending, (state) => {
-      state.loading = true;
+      handlePending(state);
+      state.task = 'send_reset_password';
     });
     builder.addCase(sendResetPasswordEmail.fulfilled, (state) => {
       state.loading = false;
-      state.task = 'send_reset_password_email';
+      state.task = 'send_reset_password_success';
     });
-    builder.addCase(sendResetPasswordEmail.rejected, (state, action) => {
-      state.loading = false;
-      state.task = 'error_reset_password_email';
-      state.error = action.payload === undefined ? 'An error occurred' : (action.payload as string);
-    });
+    builder.addCase(sendResetPasswordEmail.rejected, handleRejected);
+
     builder.addCase(affiliateKeySave.pending, (state) => {
-      state.loading = true;
-      state.task = 'save_affiliate_keys_loading';
+      handlePending(state);
+      state.task = 'save_affiliate_keys';
     });
     builder.addCase(affiliateKeySave.fulfilled, (state, action) => {
       state.loading = false;
-      state.task = 'save_affiliate_keys';
+      state.task = 'save_affiliate_keys_success';
       state.user = {
         ...state.user,
         rakutenAppId: action.payload.rakutenAppId,
@@ -390,16 +726,14 @@ const authSlice = createSlice({
         amazonSecretKey: action.payload.amazonSecretKey,
         dmmAffiliateId: action.payload.dmmAffiliateId,
         dmmApiId: action.payload.dmmApiId,
+        googleSheetUrl: action.payload.googleSheetUrl,
       };
     });
-    builder.addCase(affiliateKeySave.rejected, (state, action) => {
-      state.loading = false;
-      state.task = 'error_affiliate_keys';
-      state.error = action.payload === undefined ? 'An error occurred' : (action.payload as string);
-    });
+    builder.addCase(affiliateKeySave.rejected, handleRejected);
   },
 });
 
+// sendResetPasswordEmail
 export const sendResetPasswordEmail = createAsyncThunk<
   void,
   { email: string },
@@ -445,15 +779,19 @@ export const getUserProfile = createAsyncThunk<
   }
 });
 
-const uploadImage = async (file: File, uid: string, useCase: string) => {
-  const fileName = useCase === 'avatar' ? 'avatar' : 'background';
+// helper function to upload image
+const uploadImage = async (file: File, uid: string, useCase: 'avatar' | 'background') => {
   const ext = getFileExtension(file);
   if (ext === '') {
     throw new Error('Invalid file extension');
   }
-  const fileRef = ref(storage, `user-data/${uid}/images/${fileName}.${ext}`);
+  const fileName = `${useCase}.${ext}`;
+  const fileRef = storageRef(storage, `user-data/${uid}/images/${fileName}.${ext}`);
+  console.log(`Uploading image to ${fileRef.fullPath}`);
   await uploadBytes(fileRef, file);
-  return await getDownloadURL(fileRef);
+  const downloadUrl = await getDownloadURL(fileRef);
+  console.log(`Image uploaded successfully. Download URL: ${downloadUrl}`);
+  return downloadUrl;
 };
 
 export const getProfileImages = createAsyncThunk<
@@ -471,8 +809,8 @@ export const getProfileImages = createAsyncThunk<
     };
   }
   const { uid } = user; // Now safe to destructure uid
-  const avatarFileRef = ref(storage, `user-data/${uid}/images/avatar.jpg`);
-  const backgroundImageFileRef = ref(storage, `user-data/${uid}/images/background.jpg`);
+  const avatarFileRef = storageRef(storage, `user-data/${uid}/images/avatar.jpg`);
+  const backgroundImageFileRef = storageRef(storage, `user-data/${uid}/images/background.jpg`);
   try {
     const avatarUrl = await getDownloadURL(avatarFileRef);
     const backgroundImageUrl = await getDownloadURL(backgroundImageFileRef);
@@ -485,6 +823,7 @@ export const getProfileImages = createAsyncThunk<
   }
 });
 
+// setProfile
 export const setProfile = createAsyncThunk<
   {
     displayName: string;
@@ -500,45 +839,62 @@ export const setProfile = createAsyncThunk<
   },
   { state: RootState }
 >('auth/setProfile', async (args, thunkApi) => {
+  const appUser = thunkApi.getState().auth.user;
+  const currentUser = auth.currentUser;
+
+  if (!appUser?.uid || !currentUser) {
+    console.log('Set profile failed: User not authenticated.');
+    return thunkApi.rejectWithValue('User is not authenticated');
+  }
+  const { uid } = appUser;
+
   try {
-    const appUser = thunkApi.getState().auth.user;
-    if (appUser !== null && appUser.uid !== null) {
-      // upload avatar image and get download url
-      let avatarUrl = appUser.avatarUrl ?? defaultAvatarUrl;
-      if (args.avatar) {
-        avatarUrl = await uploadImage(args.avatar, appUser.uid, 'avatar');
-      }
-      // upload background image and get download url
-      let backgroundImageUrl = appUser.backgroundImageUrl ?? defaultBackgroundImageUrl;
-      if (args.backgroundImage) {
-        backgroundImageUrl = await uploadImage(args.backgroundImage, appUser.uid, 'background');
-      }
-      // update user profile in database
-      const userRef = dbRef(database, `user-data/${appUser.uid}/profile`);
-      await set(userRef, {
-        role: args.role,
-        avatarUrl,
-        backgroundImageUrl,
-      });
-      if (auth.currentUser) {
-        updateProfile(auth.currentUser, {
-          displayName: args.displayName,
-          photoURL: avatarUrl,
-        });
-      }
-      return {
-        displayName: args.displayName,
-        role: args.role,
-        avatarUrl,
-        backgroundImageUrl,
-      };
+    let avatarUrl = appUser.avatarUrl ?? defaultAvatarUrl;
+    let backgroundImageUrl = appUser.backgroundImageUrl ?? defaultBackgroundImageUrl;
+    let updatedAuthProfileData: { displayName?: string; photoURL?: string } = {};
+
+    // uploada avatar
+    if (args.avatar) {
+      console.log(`Uploading new avatar for user ${uid}`);
+      avatarUrl = await uploadImage(args.avatar, uid, 'avatar');
+      updatedAuthProfileData.photoURL = avatarUrl;
     }
-    throw new Error('User is not authenticated');
+
+    // upload background image
+    if (args.backgroundImage) {
+      console.log(`Uploading new background image for user ${uid}`);
+      backgroundImageUrl = await uploadImage(args.backgroundImage, uid, 'background');
+    }
+
+    // update displayName
+    if (args.displayName !== appUser.displayName) {
+      console.log(`Updating display name for user ${uid} to "${args.displayName}"`);
+      updatedAuthProfileData.displayName = args.displayName;
+    }
+
+    // RTDB profilt update
+    const userRefRTDB = dbRef(database, `user-data/${uid}/profile`);
+    const profileUpdateRTDB = {
+      role: args.role,
+      avatarUrl: avatarUrl,
+      backgroundImageUrl: backgroundImageUrl,
+    };
+    console.log(`Updating RTDB profile for user ${uid}`, profileUpdateRTDB);
+    await setRTDB(userRefRTDB, profileUpdateRTDB);
+
+    return {
+      displayName: args.displayName,
+      role: args.role,
+      avatarUrl: avatarUrl,
+      backgroundImageUrl: backgroundImageUrl,
+    };
   } catch (error: any) {
-    return thunkApi.rejectWithValue(error.message);
+    console.log('Error updating profile:', error);
+    return thunkApi.rejectWithValue(error.message || 'Failed to update profile');
   }
 });
 
+// updateUserPassword
 export const updateUserPassword = createAsyncThunk<
   void,
   { newPassword: string },
@@ -555,6 +911,7 @@ export const updateUserPassword = createAsyncThunk<
   }
 });
 
+// signOut
 export const signOut = createAsyncThunk<void, void, { state: RootState }>(
   'auth/signOut',
   async (_, thunkApi) => {
@@ -566,6 +923,7 @@ export const signOut = createAsyncThunk<void, void, { state: RootState }>(
   }
 );
 
+// saveApiKeys
 export const saveApiKeys = createAsyncThunk<
   { chatGptApiKey: string; geminiApiKey: string; anthropicApiKey: string; googleSheetUrl: string },
   { chatGptApiKey: string; geminiApiKey: string; anthropicApiKey: string; googleSheetUrl: string },
@@ -575,7 +933,7 @@ export const saveApiKeys = createAsyncThunk<
     const appUser = thunkApi.getState().auth.user;
     if (appUser !== null && appUser.uid !== null) {
       const settingsRef = dbRef(database, `user-data/${appUser.uid}/settings`);
-      await set(settingsRef, {
+      await setRTDB(settingsRef, {
         chatGptApiKey: args.chatGptApiKey,
         geminiApiKey: args.geminiApiKey,
         anthropicApiKey: args.anthropicApiKey,
@@ -594,8 +952,18 @@ export const saveApiKeys = createAsyncThunk<
   }
 });
 
+// --- Selectors ---
 export const selectAuth = (state: RootState) => state.auth;
+export const selectUser = (state: RootState) => state.auth.user;
+export const selectIsAuthenticated = (state: RootState) => !!state.auth.user?.uid;
+export const selectAuthLoading = (state: RootState) => state.auth.loading;
+// termsAccepted は null もありうるので boolean だけでなく null も考慮
+export const selectTermsAccepted = (state: RootState): boolean | null =>
+  state.auth.user?.termsAccepted ?? null;
+export const selectAuthError = (state: RootState) => state.auth.error;
+export const selectAuthTask = (state: RootState) => state.auth.task;
 
-export const { initialize, resetTask } = authSlice.actions;
+// --- Actions ---
+export const { initialize, resetTask, setLoading, setError, setUser } = authSlice.actions;
 
 export default authSlice.reducer;

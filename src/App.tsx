@@ -22,9 +22,7 @@ function App() {
       <Provider store={store}>
         <MantineProvider theme={theme}>
           <Notifications position="top-center" zIndex={100000000} />
-          <BrowserRouter>
-            <Routes />
-          </BrowserRouter>
+          <Routes />
         </MantineProvider>
       </Provider>
     </GoogleOAuthProvider>
