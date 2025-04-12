@@ -4,7 +4,7 @@
  */
 import { combineReducers, configureStore } from '@reduxjs/toolkit';
 import apiController from './reducers/apiControllerSlice';
-import auth from './reducers/authSlice';
+import auth from './reducers/auth';
 import googleAccessTokenState from './reducers/googleAccessTokenSlice';
 import xAccounts from './reducers/xAccountsSlice';
 import xErrors from './reducers/xErrorsSlice';
