@@ -1,21 +1,11 @@
 import React, { lazy } from 'react';
-import path from 'path';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { child } from 'firebase/database';
 import { doc, getDoc } from 'firebase/firestore';
-import { Outlet, redirect } from 'react-router';
+import { redirect } from 'react-router';
 // --- Firebase & Helper Function for Loader ---
 // SignInRoutes と同じヘルパー関数を使うか、必要なら保護ルート用に調整
 import { auth, db } from '@/firebase';
-import { MainLayout } from '@/layouts/MainLayout';
 import { UserFirestoreData } from '@/types/auth';
-
-const Activity = lazy(() => import('@/pages/Activity'));
-const Dashboard = lazy(() => import('@/pages/Dashboard'));
-const ProfilePage = lazy(() => import('@/pages/Profile'));
-const XAccountsList = lazy(() => import('@/pages/XAccountsList'));
-const XPostsList = lazy(() => import('@/pages/XPostsList'));
-const TermsPage = lazy(() => import('@/pages/Terms/TermsPage'));
 
 // 保護ルート用の認証・規約チェックヘルパー
 const checkAuthStatusForProtected = async (): Promise<{
@@ -61,6 +51,7 @@ const checkAuthStatusForProtected = async (): Promise<{
 export const protectedLoader = async ({ request }: { request: Request }) => {
   console.log('Running protectedLoader...');
   const { isAuthenticated, termsAccepted, user } = await checkAuthStatusForProtected();
+  const currentPath = new URL(request.url).pathname; // ★ アクセス先のパスを取得
   console.log(
     `protectedLoader - isAuthenticated: ${isAuthenticated}, termsAccepted: ${termsAccepted}`
   );
@@ -78,15 +69,18 @@ export const protectedLoader = async ({ request }: { request: Request }) => {
   }
 
   if (termsAccepted === false) {
-    // 認証済みだが規約未同意の場合、規約ページへリダイレクト
-    // 現在地が規約ページでないことを確認 (無限ループ防止)
-    if (new URL(request.url).pathname !== '/terms') {
+    // ★ アクセスしようとしているパスが '/terms' でなければ、'/terms' へリダイレクト
+    if (currentPath !== '/terms') {
       console.log('protectedLoader: Authenticated but terms not accepted. Redirecting to /terms');
       return redirect('/terms');
     }
-    // 既に /terms にいる場合は loader は null を返し、TermsPage の表示を許可
-    console.log('protectedLoader: Already on /terms page.');
-    return null;
+    // ★ アクセスしようとしているパスが '/terms' の場合は、リダイレクトせずに表示を許可
+    console.log(
+      'protectedLoader: Accessing /terms while terms not accepted. Allowing access to TermsPage.'
+    );
+    // return null または { user } を返して TermsPage を表示させる
+    // TermsPageでユーザー情報が必要な場合があるので { user } を返すのが良い
+    return { user };
   }
 
   if (termsAccepted === null) {
@@ -104,43 +98,3 @@ export const protectedLoader = async ({ request }: { request: Request }) => {
   // この例では user オブジェクトを返すが、Reduxから取得できるなら不要な場合も多い
   return { user }; // useLoaderData() で受け取れる
 };
-
-const MainRoutes = {
-  path: '/',
-  element: <MainLayout />,
-  children: [
-    {
-      path: '/dashboard',
-      element: <Dashboard />,
-
-      children: [
-        {
-          index: true,
-          element: <Activity />,
-        },
-        {
-          path: 'x-accounts',
-          element: <XAccountsList />,
-        },
-        {
-          path: 'x-accounts/:xAccountId',
-          element: <XPostsList />,
-        },
-      ],
-    },
-    {
-      path: 'profile',
-      element: <ProfilePage />,
-    },
-    {
-      // 重要: 規約ページへのルートも保護ルート内に定義する
-      // (protectedLoaderが未同意時にリダイレクトするため)
-      // ただし、loader は protectedLoader をそのまま使う
-      path: '/terms', // /terms
-      element: <TermsPage />,
-      // loader: protectedLoader // 親から継承される or 個別に設定しても良い
-      // protectedLoader は /terms へのアクセスを許可するロジックを含む
-    },
-  ],
-};
-export default MainRoutes;

@@ -74,7 +74,13 @@ const FileInput: React.FC<FileInputProps> = ({ onChange, disabled }) => {
         </ActionIcon>
       </Tooltip>
       {/* 非表示のファイル選択入力 */}
-      <input type="file" hidden ref={fileInputRef} accept="image/*" onChange={handleFileChange} />
+      <input
+        type="file"
+        hidden
+        ref={fileInputRef}
+        accept="image/*, .mp4"
+        onChange={handleFileChange}
+      />
     </Box>
   );
 };

@@ -3,7 +3,7 @@ import { Button, LoadingOverlay, Paper, Stack, TextInput, Title } from '@mantine
 import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
-import { saveApiKeys } from '@/store/reducers/authSlice';
+import { saveApiKeys } from '@/store/reducers/auth';
 
 interface FormValues {
   chatGptApiKey: string;

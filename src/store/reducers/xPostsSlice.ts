@@ -1,6 +1,8 @@
 import { RootState } from '..';
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import axios from 'axios';
+import { ref as dbRef, get, runTransaction } from 'firebase/database';
+import { database } from '@/firebase';
 import {
   DeleteResult,
   UpdateInReplyToResult,
@@ -28,7 +30,43 @@ const initialState: XPostListFetchStatus = {
   errorMessage: '',
 };
 
+const appMode = import.meta.env.VITE_APP_MODE;
+const isPreview = appMode === 'preview' || appMode === 'development'; // プレビュー版かどうか
+
 const PROXY_ENDPOINT = import.meta.env.VITE_PROXY_URL || '/api/gas-proxy';
+const SCHEDULE_LIMIT = 50; // スケジュール設定回数の上限
+
+// --- RTDB Helper Functions ---
+/**
+ * 指定されたユーザーのスケジュール設定回数を取得する
+ * @param uid ユーザーID
+ * @returns 現在の設定回数 (未設定の場合は0)
+ */
+const getScheduleLimitCount = async (uid: string): Promise<number> => {
+  const limitRef = dbRef(database, `user-data/${uid}/settings/limit/postScheduleCount`);
+  const snapshot = await get(limitRef);
+  return snapshot.exists() ? snapshot.val() : 0;
+};
+
+/**
+ * 指定されたユーザーのスケジュール設定回数をアトミックにインクリメントする
+ * @param uid ユーザーID
+ * @param incrementBy 増やす数
+ */
+const incrementScheduleLimitCount = async (uid: string, incrementBy: number): Promise<void> => {
+  if (incrementBy <= 0) return;
+  const limitRef = dbRef(database, `user-data/${uid}/settings/limit/postScheduleCount`);
+  try {
+    await runTransaction(limitRef, (currentCount) => {
+      return (currentCount || 0) + incrementBy;
+    });
+    console.log(`Incremented schedule limit for ${uid} by ${incrementBy}`);
+  } catch (error) {
+    console.error(`Failed to increment schedule limit for ${uid}:`, error);
+    // ここでのエラーはスローせず、ログに残すだけにする（Thunkの成否には影響させない）
+  }
+};
+
 // Xポストリスト取得の非同期アクション
 export const fetchXPosts = createAsyncThunk(
   'xPosts/fetchXPosts',
@@ -65,12 +103,27 @@ export const createXPost = createAsyncThunk(
     { xAccountId, xPost }: { xAccountId: string; xPost: XPostDataType },
     { getState, rejectWithValue }
   ) => {
-    try {
-      const state = getState() as RootState;
-      const restUrl = state.auth.user?.googleSheetUrl;
+    const state = getState() as RootState;
+    const uid = state.auth.user?.uid;
+    const restUrl = state.auth.user?.googleSheetUrl;
 
-      if (!restUrl) {
-        return rejectWithValue('GoogleSheet URL が設定されていません');
+    if (!uid) {
+      return rejectWithValue('ユーザー認証が必要です。');
+    }
+
+    if (!restUrl) {
+      return rejectWithValue('GoogleSheet URL が設定されていません');
+    }
+
+    try {
+      // プレビュー版でスケジュール設定がある場合、上限チェック
+      if (isPreview && xPost.postSchedule && xPost.postSchedule.trim() !== '') {
+        const currentCount = await getScheduleLimitCount(uid);
+        if (currentCount >= SCHEDULE_LIMIT) {
+          return rejectWithValue(
+            `[プレビュー制限] スケジュール設定回数の上限(${SCHEDULE_LIMIT}回)に達しました。`
+          );
+        }
       }
 
       console.log('xPost', xPost);
@@ -94,6 +147,11 @@ export const createXPost = createAsyncThunk(
         return rejectWithValue(response.data.message || 'Xポストの作成に失敗しました');
       }
 
+      // 成功した場合、プレビュー版でスケジュール設定があればカウントを増やす
+      if (isPreview && xPost.postSchedule && xPost.postSchedule.trim() !== '') {
+        await incrementScheduleLimitCount(uid, 1);
+      }
+
       return { xAccountId, post: response.data.data };
     } catch (error: any) {
       return rejectWithValue(
@@ -110,14 +168,32 @@ export const updateXPost = createAsyncThunk(
     { xAccountId, xPost }: { xAccountId: string; xPost: XPostDataType },
     { getState, rejectWithValue }
   ) => {
+    const state = getState() as RootState;
+    const uid = state.auth.user?.uid;
+    const restUrl = state.auth.user?.googleSheetUrl;
+
+    if (!uid) {
+      return rejectWithValue('ユーザー認証が必要です。');
+    }
+    if (!restUrl) {
+      return rejectWithValue('GoogleSheet URL が設定されていません');
+    }
     try {
-      const state = getState() as RootState;
-      const restUrl = state.auth.user?.googleSheetUrl;
+      // 現在のポストデータを取得して比較
+      const currentPost = state.xPosts.xPostList.find((p) => p.id === xPost.id);
+      const oldSchedule = currentPost?.postSchedule?.trim() ?? '';
+      const newSchedule = xPost.postSchedule?.trim() ?? '';
+      const isScheduleBeingSetOrChanged = newSchedule !== '' && oldSchedule !== newSchedule;
 
-      if (!restUrl) {
-        return rejectWithValue('GoogleSheet URL が設定されていません');
+      // プレビュー版でスケジュールが新規設定または変更される場合、上限チェック
+      if (isPreview && isScheduleBeingSetOrChanged) {
+        const currentCount = await getScheduleLimitCount(uid);
+        if (currentCount >= SCHEDULE_LIMIT) {
+          return rejectWithValue(
+            `[プレビュー制限] スケジュール設定回数の上限(${SCHEDULE_LIMIT}回)に達しました。`
+          );
+        }
       }
-
       // APIリクエスト用のデータを作成
       const requestData = {
         ...xPost,
@@ -137,6 +213,10 @@ export const updateXPost = createAsyncThunk(
 
       if (response.data.status === 'error') {
         return rejectWithValue(response.data.message || 'Xポストの更新に失敗しました');
+      }
+      // 成功した場合、プレビュー版でスケジュールが設定/変更されていればカウントを増やす
+      if (isPreview && isScheduleBeingSetOrChanged) {
+        await incrementScheduleLimitCount(uid, 1);
       }
 
       return { xAccountId, post: response.data.data };
@@ -200,12 +280,37 @@ export const updateSchedules = createAsyncThunk<
 >('xPosts/updateSchedules', async (args, { getState, rejectWithValue }) => {
   try {
     const state = getState() as RootState;
+    const uid = state.auth.user?.uid;
     const restUrl = state.auth.user?.googleSheetUrl;
 
+    if (!uid) {
+      return rejectWithValue('ユーザー認証が必要です。');
+    }
     if (!restUrl) {
       return rejectWithValue('GoogleSheet URL が設定されていません');
     }
     const { xAccountId, scheduleUpdates } = args;
+    const numberOfUpdates = scheduleUpdates.length;
+
+    // プレビュー版で更新件数 > 0 の場合、上限チェック
+    if (isPreview && numberOfUpdates > 0) {
+      const currentCount = await getScheduleLimitCount(uid);
+      if (currentCount >= SCHEDULE_LIMIT) {
+        return rejectWithValue(
+          `[プレビュー制限] スケジュール設定回数の上限(${SCHEDULE_LIMIT}回)に達しました。一括更新はできません。`
+        );
+      }
+      if (currentCount + numberOfUpdates > SCHEDULE_LIMIT) {
+        const remainingSlots = SCHEDULE_LIMIT - currentCount;
+        return rejectWithValue(
+          `[プレビュー制限] スケジュール設定回数の上限(${SCHEDULE_LIMIT}回)を超えます。あと${remainingSlots}件まで設定可能です。`
+        );
+      }
+    } else if (numberOfUpdates === 0) {
+      // 更新対象が0件の場合は何もしない
+      return { xAccountId, results: [] };
+    }
+
     console.log('scheduleUpdates', scheduleUpdates);
     const requestData = {
       scheduleUpdates,
@@ -224,6 +329,13 @@ export const updateSchedules = createAsyncThunk<
 
     if (response.data.status === 'error') {
       return rejectWithValue(response.data.message || 'スケジュールの一括更新に失敗しました');
+    }
+
+    // 成功した場合、プレビュー版で実際に更新された件数分カウントを増やす
+    const successfulUpdates =
+      response.data.data?.filter((item: UpdateResult) => item.status === 'updated').length ?? 0;
+    if (isPreview && successfulUpdates > 0) {
+      await incrementScheduleLimitCount(uid, successfulUpdates);
     }
 
     return { xAccountId, results: response.data.data || [] };
@@ -341,7 +453,7 @@ export const createThreadPosts = createAsyncThunk<
       },
       params: {
         action: 'updateInReplyTo',
-        target: 'postDate',
+        target: 'postData',
       },
     });
 
@@ -570,11 +682,15 @@ const xPostsSlice = createSlice({
           });
         }
         // 現在表示中のアカウントに関連する投稿を更新
-        if (state.xAccountId) {
-          state.xPostListByXAccountId = state.xPostList.filter(
-            (post) => post.postTo === state.xAccountId
-          );
-        }
+
+        state.xPostListByXAccountId = state.xPostList.filter(
+          (post) => post.postTo === action.payload.xAccountId
+        );
+      })
+      .addCase(createThreadPosts.rejected, (state, action) => {
+        state.isLoading = false;
+        state.isError = true;
+        state.errorMessage = action.payload as string;
       });
   },
 });

@@ -11,8 +11,11 @@ const allowedOrigins: string[] = [
   // ★ 型定義を追加
   'http://localhost:5173', // ローカル開発環境 (Vite デフォルト)
   'https://torai.try-try.com', // 本番カスタムドメイン
-  `https://${process.env.GCLOUD_PROJECT}.web.app`, // Firebase Hosting デフォルトドメイン
-  // 他にも Firebase Hosting のプレビューURLなどを許可する場合は追加
+  'https://torai-preview.web.app', // 本番カスタムドメイン (Firebase Hosting)
+  'https://torai-preview.firebaseapp.com',
+  'https://torai-preview.try-try.com',
+  'https://torai-e0d8e.web.app', // 本番カスタムドメイン (Firebase Hosting)
+  'https://torai-e0d8e.firebaseapp.com',
 ];
 
 // CORS ミドルウェアの設定 ★★★ この定義が必要です ★★★
@@ -44,6 +47,7 @@ const corsHandler = cors({
 export const proxyToGas = onRequest(
   {
     region: 'asia-northeast1', // 日本リージョン (必要に応じて変更)
+    //region: 'us-central1', // 日本リージョン (必要に応じて変更)
     memory: '1GiB', // 処理量が多いためメモリ割り当てを1GBに増加
     // timeoutSeconds: 60,     // タイムアウト秒数 (デフォルトは60秒)
     // concurrency: 80,       // 同時実行数 (デフォルトは80)

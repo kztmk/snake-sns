@@ -87,38 +87,3 @@ export const guestLoader = async () => {
   console.log('guestLoader: Not authenticated. Allowing access to guest page.');
   return null;
 };
-
-// render - login
-const AuthSignin = lazy(() => import('@/pages/Auth/SignIn'));
-const AuthForgotPassword = Loadable(lazy(() => import('@/pages/Auth/ForgotPassword')));
-const AuthResetPassword = Loadable(lazy(() => import('@/pages/Auth/ResetPassword')));
-//const AuthRegister = Loadable(lazy(() => import('../pages/auth/register')));
-
-// ==============================|| AUTH ROUTES ||============================== //
-
-const SignInRoutes = {
-  path: '/',
-  children: [
-    {
-      path: '/',
-      element: <BlankPage />,
-      loader: guestLoader, // ゲスト向けのローダーを指定
-      children: [
-        {
-          path: 'signin',
-          element: <AuthSignin />,
-        },
-        {
-          path: 'forgot-password',
-          element: <AuthForgotPassword />,
-        },
-        {
-          path: 'reset-password',
-          element: <AuthResetPassword />,
-        },
-      ],
-    },
-  ],
-};
-
-export default SignInRoutes;

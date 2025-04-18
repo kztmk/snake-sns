@@ -54,7 +54,10 @@ export const linkAndGetGoogleToken = createAsyncThunk<
     const provider = new GoogleAuthProvider();
     // ★★★ Drive スコープは必須 ★★★
     provider.addScope('https://www.googleapis.com/auth/drive.file');
-    // 他に必要なスコープがあれば追加
+    provider.addScope('https://www.googleapis.com/auth/drive.readonly');
+    // 必要に応じて他のスコープも追加できます
+    // provider.addScope('https://www.googleapis.com/auth/userinfo.profile');
+    // provider.addScope('https://www.googleapis.com/auth/userinfo.email');
 
     try {
       // 1. ユーザーが既に Google とリンク済みか確認

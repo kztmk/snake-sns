@@ -4,7 +4,7 @@ import utc from 'dayjs/plugin/utc';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 // @ts-ignore
 import twitter from '@ambassify/twitter-text';
-import { IconAlertCircle, IconCheck, IconX } from '@tabler/icons-react';
+import { IconAlertCircle, IconBrandGoogleDrive, IconCheck, IconX } from '@tabler/icons-react';
 import { EmojiClickData } from 'emoji-picker-react';
 import emojiRegex from 'emoji-regex';
 import { getAuth } from 'firebase/auth';
@@ -24,6 +24,7 @@ import {
   Stack,
   Text,
   Textarea,
+  Tooltip,
 } from '@mantine/core';
 import { DateTimePicker } from '@mantine/dates';
 import { notifications } from '@mantine/notifications';
@@ -63,6 +64,15 @@ interface XPostFormProps {
   feedBack: ({ operation, text }: { operation: string; text: string }) => void;
 }
 
+// Google API の型定義 (必要に応じて)
+declare global {
+  interface Window {
+    gapi: any;
+    google: any;
+    googlePickerLoaded?: boolean;
+  }
+}
+
 export const xPostFormDefaultValue: XPostDataType = {
   id: '',
   contents: '',
@@ -89,6 +99,11 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
   const [cancelUpload, setCancelUpload] = useState(false);
   const [weightedLength, setWeightedLength] = useState(0);
   const [selectedHashTags, setSelectedHashTags] = useState<string[]>([]);
+
+  // for google drive picker
+  const [isPickerApiLoaded, setIsPickerApiLoaded] = useState(window.googlePickerLoaded || false);
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID; // .env から取得
+  const googleDeveloperKey = import.meta.env.VITE_GOOGLE_API_KEY; // .env から取得
 
   // fileIdをキーとするRecordに
   const blobUrlsRef = useRef<Record<string, string>>({});
@@ -135,6 +150,22 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     const regex = emojiRegex();
     const emojis = text.match(regex) || [];
     return emojis.length;
+  }, []);
+
+  // Picker API のロード状態を監視
+  useEffect(() => {
+    const handlePickerLoad = () => {
+      setIsPickerApiLoaded(true);
+    };
+    if (window.googlePickerLoaded) {
+      setIsPickerApiLoaded(true);
+    } else {
+      // イベントリスナーでロード完了を待つ
+      window.addEventListener('google-picker-loaded', handlePickerLoad);
+    }
+    return () => {
+      window.removeEventListener('google-picker-loaded', handlePickerLoad);
+    };
   }, []);
 
   // Xポストのステータスが変化したときの処理
@@ -596,21 +627,121 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
     setCancelUpload(true);
   }, []);
 
+  // Google Picker を開く処理
+  const handleOpenPicker = useCallback(async () => {
+    if (!isPickerApiLoaded) {
+      notifications.show({
+        title: '準備中',
+        message: 'Google Picker API のロード待機中です。',
+        color: 'blue',
+      });
+      return;
+    }
+
+    let currentToken = googleAccessToken;
+
+    // トークンがなければ取得試行
+    if (!currentToken) {
+      const resultAction = await dispatch(linkAndGetGoogleToken());
+      if (linkAndGetGoogleToken.fulfilled.match(resultAction)) {
+        currentToken = resultAction.payload.accessToken;
+      } else {
+        notifications.show({
+          title: '認証エラー',
+          message: resultAction.payload?.message ?? 'Googleアカウントとの連携が必要です。',
+          color: 'red',
+        });
+        // 必要なら再認証ボタン表示などの処理
+        setShowReauthButton(true);
+        return;
+      }
+    }
+
+    if (!currentToken) {
+      notifications.show({
+        title: 'エラー',
+        message: 'Googleアクセストークンを取得できませんでした。',
+        color: 'red',
+      });
+      setShowReauthButton(true);
+      return;
+    }
+
+    // Picker の設定と表示
+    const view = new window.google.picker.View(window.google.picker.ViewId.DOCS);
+    // 画像と動画のみ表示・選択可能にする
+    view.setMimeTypes('image/png,image/jpeg,image/jpg,image/gif,video/mp4,video/quicktime'); // 必要に応じてMIMEタイプを追加
+
+    const picker = new window.google.picker.PickerBuilder()
+      .enableFeature(window.google.picker.Feature.NAV_HIDDEN) // ナビゲーションを隠す (任意)
+      .setAppId(googleClientId) // App ID (Client ID) を設定
+      .setOAuthToken(currentToken) // OAuth トークンを設定
+      .addView(view)
+      // .addView(new window.google.picker.DocsUploadView()) // アップロードビューも追加する場合
+      .setDeveloperKey(googleDeveloperKey) // API キーを設定
+      .setCallback(pickerCallback) // コールバック関数を設定
+      .build();
+    picker.setVisible(true);
+  }, [isPickerApiLoaded, googleAccessToken, dispatch, googleClientId, googleDeveloperKey]);
+
+  // Picker でファイルが選択されたときのコールバック
+  const pickerCallback = useCallback(
+    (data: any) => {
+      if (data.action === window.google.picker.Action.PICKED) {
+        const docs = data.docs;
+        if (docs && docs.length > 0) {
+          const newPics: CachedMediaDataType[] = [];
+          docs.forEach((doc: any) => {
+            console.log('Selected Google Drive file:', doc);
+            const fileId = doc.id;
+            const fileName = doc.name;
+            const mimeType = doc.mimeType;
+            // サムネイルURLがあれば使う (なければ handleLoadImage で取得)
+            const thumbnailUrl =
+              doc.thumbnails && doc.thumbnails.length > 0 ? doc.thumbnails[0].url : '';
+
+            const newPicData: CachedMediaDataType = {
+              file: null, // Drive から選択したので File オブジェクトは null
+              fileId: fileId,
+              fileName: fileName,
+              mimeType: mimeType,
+              imgUrl: thumbnailUrl, // 初期はサムネイル or 空
+              isLoading: true, // これからロードする
+              error: null,
+            };
+            newPics.push(newPicData);
+
+            // サムネイル表示のために画像をロード (既存の handleLoadImage を利用)
+            // 注意: handleLoadImage が Google Drive のサムネイル取得に対応しているか確認
+            // 必要であれば handleLoadImage を修正するか、ここで直接 Blob を取得して表示
+            handleLoadImage(newPicData, googleAccessToken); // トークンを渡す
+          });
+
+          // 既存の画像と合わせて4枚以下かチェック
+          if (pics.length + newPics.length > 4) {
+            notifications.show({
+              title: '制限超過',
+              message: '画像/動画は合計4つまで選択できます。',
+              color: 'orange',
+            });
+            // 4枚を超える分は追加しない (最初の数枚だけ追加するなどの調整も可能)
+            const remainingSlots = 4 - pics.length;
+            setPics((oldPics) => [...oldPics, ...newPics.slice(0, remainingSlots)]);
+          } else {
+            setPics((oldPics) => [...oldPics, ...newPics]);
+          }
+        }
+      } else if (data.action === window.google.picker.Action.CANCEL) {
+        console.log('Google Picker was cancelled.');
+      }
+    },
+    [pics.length, handleLoadImage, googleAccessToken, setPics, notifications]
+  );
+
   return (
     <Grid>
       <Grid.Col span={12}>
         <Card withBorder>
-          <Card.Section withBorder inheritPadding py="xs">
-            <Group justify="space-between">
-              <Text fw={500} size="lg">
-                {xPostData.id === '' ? '新規Xポスト作成' : 'Xポスト編集'}
-                {`:@${xAccountId}`}
-              </Text>
-              <ActionIcon onClick={handleCancel} variant="transparent">
-                <IconX />
-              </ActionIcon>
-            </Group>
-          </Card.Section>
           <LoadingOverlay visible={isSubmitting} />
           {errorMessage && (
             <Alert
@@ -651,6 +782,18 @@ const XPostForm: React.FC<XPostFormProps> = (props) => {
               )}
               <Group gap="md">
                 <FileInput onChange={addImage} disabled={pics.length > 3} />
+                {/* Google Drive ボタン */}
+                <Tooltip label="Google Drive から画像を選択">
+                  <ActionIcon
+                    size={36}
+                    variant="filled"
+                    onClick={handleOpenPicker}
+                    disabled={!isPickerApiLoaded || pics.length >= 4} // APIロード前や上限到達時は無効化
+                    loading={!isPickerApiLoaded && !window.googlePickerLoaded} // ロード中はローディング表示
+                  >
+                    <IconBrandGoogleDrive size={48} />
+                  </ActionIcon>
+                </Tooltip>
                 <EmojiPicker onSelectedEmoji={insertAtPos} ref={emojiPickerRef} />
                 <CircularWithLabel value={weightedLength} size={48} />
                 <Text c="dimmed" mx="md">

@@ -37,7 +37,24 @@ export const fetchXErrors = createAsyncThunk<
 
     // APIからのレスポンス構造に基づいて適切にデータを処理
     if (response.data.status === 'success') {
-      return response.data.data;
+      // APIレスポンスの型を定義 (必要に応じてより厳密に)
+      type ApiErrorResponse = {
+        Timestamp: string;
+        Context: string;
+        'Error Message': string;
+        'Stack Trace': string;
+      };
+
+      const rawData: ApiErrorResponse[] = response.data.data;
+
+      // PostError型にマッピング
+      const formattedData: PostError[] = rawData.map((item) => ({
+        timestamp: item.Timestamp,
+        context: item.Context,
+        message: item['Error Message'], // ブラケット記法を使用
+        stack: item['Stack Trace'], // ブラケット記法を使用
+      }));
+      return formattedData;
     }
 
     return thunkApi.rejectWithValue(response.data.message || 'エラーデータの取得に失敗しました。');
@@ -49,6 +66,8 @@ export const fetchXErrors = createAsyncThunk<
     return thunkApi.rejectWithValue(errorMsg);
   }
 });
+
+// ...existing code...
 
 const xErrorsSlice = createSlice({
   name: 'xErrors',
