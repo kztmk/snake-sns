@@ -28,10 +28,22 @@ export async function fetchAndCacheBlob(
       return Mp4Image;
     }
 
+    const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
     // Google Driveからファイル取得
     const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
+
+    console.log('AccessToken:', accessToken);
+
+    if (!response.ok) {
+      // 404以外のエラーも考慮
+      console.error('Fetch error status:', response.status);
+      const errorBody = await response.text(); // エラーレスポンスの内容を確認
+      console.error('Fetch error body:', errorBody);
+      // ここで404エラーが発生している
+      throw new Error(`ファイル取得エラー: ${response.status}`);
+    }
 
     if (!response.ok) {
       throw new Error(`ファイル取得エラー: ${response.status}`);

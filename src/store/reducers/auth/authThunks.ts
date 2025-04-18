@@ -1,4 +1,5 @@
 // src/store/reducers/auth/authThunks.ts
+import test from 'node:test';
 import { createAsyncThunk } from '@reduxjs/toolkit';
 import {
   getAdditionalUserInfo,
@@ -11,6 +12,7 @@ import {
 } from 'firebase/auth';
 import { ref as dbRef, get, getDatabase } from 'firebase/database';
 import { doc, getDoc, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { useNavigate } from 'react-router';
 import { auth, database, db } from '@/firebase';
 import { UserFirestoreData } from '@/types/auth';
 import { translateFirebaseAuthError } from '@/utils/firebaseUtils';
@@ -27,6 +29,8 @@ export const signIn = createAsyncThunk<
   { email: string; password: string },
   { rejectValue: string }
 >(`${SLICE_NAME}/signIn`, async (args, thunkApi) => {
+  const appMode = import.meta.env.VITE_APP_MODE;
+  const isPreview = appMode === 'preview';
   try {
     const response = await signInWithEmailAndPassword(auth, args.email, args.password);
     const user = response.user;
@@ -49,7 +53,17 @@ export const signIn = createAsyncThunk<
       console.log(
         `Firestore document for user ${user.uid} not found. Creating with termsAccepted: false`
       );
-      await setDoc(userDocRef, { termsAccepted: false, createdAt: serverTimestamp() });
+      await setDoc(
+        userDocRef,
+        {
+          termsAccepted: false,
+          createdAt: serverTimestamp(),
+          email: user.email,
+          displayName: user.displayName,
+          applyMailchimpTag: isPreview ? ['torai-preview-pending'] : ['trai-pending'],
+        },
+        { merge: true }
+      );
       termsAccepted = false;
     }
 
@@ -105,6 +119,8 @@ export const signIn = createAsyncThunk<
 export const signInWithGoogle = createAsyncThunk<AppUser, void, { rejectValue: string }>(
   `${SLICE_NAME}/signInWithGoogle`,
   async (_, thunkApi) => {
+    const appMode = import.meta.env.VITE_APP_MODE;
+    const isPreview = appMode === 'preview';
     const googleProvider = new GoogleAuthProvider();
     try {
       const result = await signInWithPopup(auth, googleProvider);
@@ -131,6 +147,8 @@ export const signInWithGoogle = createAsyncThunk<AppUser, void, { rejectValue: s
         console.log(
           `New Google user or Firestore doc missing for ${user.uid}. Setting termsAccepted: false.`
         );
+        console.log('signInWithGoogle: isPreview', isPreview);
+        const testArray = ['pending'];
         await setDoc(
           userDocRef,
           {
@@ -138,6 +156,7 @@ export const signInWithGoogle = createAsyncThunk<AppUser, void, { rejectValue: s
             createdAt: serverTimestamp(),
             email: user.email, // 任意: Auth情報をFirestoreにも保存
             displayName: user.displayName, // 任意
+            applyMailchimpTag: isPreview ? ['torai-preview-pending'] : ['trai-pending'], // 任意: Mailchimpタグ
           },
           { merge: true }
         ); // merge:true で既存フィールドを保持しつつ上書き/作成
@@ -284,33 +303,35 @@ export const listenAuthState = () => {
           ]);
 
           let userData: UserFirestoreData | null = null;
-          let termsAccepted: boolean | null = null;
+          let termsAccepted: boolean = false; // デフォルトを false に
 
           if (userDocSnap.exists()) {
             userData = userDocSnap.data() as UserFirestoreData;
+            // termsAccepted が boolean 型ならその値、そうでなければ false
             termsAccepted =
-              typeof userData.termsAccepted === 'boolean' ? userData.termsAccepted : null;
+              typeof userData.termsAccepted === 'boolean' ? userData.termsAccepted : false;
 
-            // termsAcceptedがnullの場合、Firestoreにfalseで保存
-            if (termsAccepted === null) {
+            // termsAccepted が boolean でなかった場合のみ Firestore を更新
+            if (typeof userData.termsAccepted !== 'boolean') {
               console.warn(
-                `User ${user.uid} Firestore data lacks a valid termsAccepted field. Setting to false.`
+                `[listenAuthState] User ${user.uid} Firestore data lacks a valid termsAccepted field. Updating to false.`
               );
+              // updateDoc を使用して termsAccepted のみ更新
               await updateDoc(userDocRef, { termsAccepted: false });
-              termsAccepted = false;
+              // userData オブジェクトも更新しておく (任意)
+              if (userData) {
+                userData.termsAccepted = false;
+              }
             }
           } else {
-            // Firestoreにドキュメントがない場合、作成
+            // ★ ドキュメントが存在しない場合、listenAuthState では作成しない
+            // ドキュメント作成は signInWithGoogle や他の登録処理に任せる
             console.warn(
-              `User ${user.uid} Firestore document not found. Creating with termsAccepted: false`
+              `[listenAuthState] User ${user.uid} Firestore document not found. Assuming termsAccepted: false. Document should be created on sign-in/sign-up.`
             );
-            await setDoc(
-              userDocRef,
-              { termsAccepted: false, createdAt: serverTimestamp() },
-              { merge: true }
-            );
-            termsAccepted = false;
-            userData = { termsAccepted: false }; // 初期値を設定
+            // userData は null のまま or 必要なら初期オブジェクトを設定
+            userData = null; // または { termsAccepted: false, /* 他のデフォルト */ }
+            termsAccepted = false; // Redux には false として伝える
           }
 
           const profileData = profileSnapshot.exists() ? profileSnapshot.val() : null;
@@ -319,13 +340,14 @@ export const listenAuthState = () => {
           // storeにユーザーデータを保存
           const payload: SetUserPayload = {
             user,
-            userData: { ...userData, termsAccepted },
+            // userData が null の可能性を考慮するか、初期オブジェクトを使う
+            userData: userData ? { ...userData, termsAccepted } : { termsAccepted },
             profileData,
             settingsData,
           };
           dispatch(setUser(payload));
         } catch (error: any) {
-          console.error('Error fetching user data during auth state change:', error);
+          console.error('[listenAuthState] Error fetching user data:', error);
           // エラーが発生しても基本的なAuth情報はセットする (ユーザーは認証されているため)
           dispatch(setUser({ user, userData: null, profileData: null, settingsData: null }));
           dispatch({ type: `${SLICE_NAME}/setError`, payload: 'Failed to load user data.' }); // エラー状態をセット

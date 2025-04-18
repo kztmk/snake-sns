@@ -5,6 +5,7 @@ import { z } from 'zod';
 import {
   Button,
   Checkbox,
+  Container,
   LoadingOverlay,
   Paper,
   PasswordInput,
@@ -25,9 +26,16 @@ import {
   selectUser,
   signIn,
   signInWithGoogle,
-} from '@/store/reducers/authSlice';
+} from '@/store/reducers/auth';
 import classes from './SignInImage.module.css';
 
+// プロパティの型定義を追加
+interface SignInProps {
+  /** Storybook やテスト用に appMode を注入するためのオプションプロパティ */
+  _appMode?: string;
+}
+
+// {isPreview ? <Someting /> : <SomethingElse />}
 // Define zod schema for validation
 const schema = z.object({
   email: z.string().email({ message: '有効なメールアドレスを入力してください' }),
@@ -38,7 +46,14 @@ const schema = z.object({
 // Type for our form values
 type FormValues = z.infer<typeof schema>;
 
+// コンポーネント定義でプロパティを受け取る
 export default function SignIn() {
+  // _appMode が提供されていればそれを使用し、なければ環境変数から取得
+  const appMode = import.meta.env.VITE_APP_MODE;
+  const isPreview = appMode === 'preview';
+  // console.log は残しておいても良い
+  console.log(`App mode: ${appMode}, Preview mode: ${isPreview}`);
+
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const location = useLocation();
@@ -166,55 +181,74 @@ export default function SignIn() {
   }, [dispatch]);
 
   return (
-    <div className={classes.wrapper}>
-      <Paper className={classes.form} radius={0} p={30}>
-        <LoadingOverlay
-          visible={isLoading}
-          zIndex={1000}
-          overlayProps={{ radius: 'sm', blur: 2 }}
-        />
-        <Title order={2} className={classes.title} ta="center" mt="md" mb={50}>
-          SnS-Snakeへサインイン
-        </Title>
+    <Container>
+      <div className={classes.wrapper}>
+        <Paper className={classes.form} radius={0} p={30}>
+          <LoadingOverlay
+            visible={isLoading}
+            zIndex={1000}
+            overlayProps={{ radius: 'sm', blur: 2 }}
+          />
+          <Title order={2} className={classes.title} ta="center" mt="md" mb={50}>
+            虎威へサインイン
+          </Title>
 
-        <form onSubmit={form.onSubmit(handleSubmit)}>
-          <TextInput
-            label="メールアドレス"
-            placeholder="hello@gmail.com"
-            size="md"
-            withAsterisk
-            {...form.getInputProps('email')}
-          />
-          <PasswordInput
-            label="パスワード"
-            placeholder="Your password"
-            mt="md"
-            size="md"
-            withAsterisk
-            {...form.getInputProps('password')}
-          />
-          <Checkbox
-            label="サインイン情報を保存"
-            mt="xl"
-            size="md"
-            {...form.getInputProps('rememberMe', { type: 'checkbox' })}
-          />
-          <Button type="submit" fullWidth mt="xl" size="md">
-            サインイン
-          </Button>
-        </form>
+          {!isPreview ? (
+            <>
+              <form onSubmit={form.onSubmit(handleSubmit)}>
+                <TextInput
+                  label="メールアドレス"
+                  placeholder="hello@gmail.com"
+                  size="md"
+                  withAsterisk
+                  {...form.getInputProps('email')}
+                />
+                <PasswordInput
+                  label="パスワード"
+                  placeholder="Your password"
+                  mt="md"
+                  size="md"
+                  withAsterisk
+                  {...form.getInputProps('password')}
+                />
+                <Checkbox
+                  label="サインイン情報を保存"
+                  mt="xl"
+                  size="md"
+                  {...form.getInputProps('rememberMe', { type: 'checkbox' })}
+                />
+                <Button type="submit" fullWidth mt="xl" size="md">
+                  サインイン
+                </Button>
+              </form>
 
-        <Text ta="center" mt="md">
-          パスワードを忘れた場合{' '}
-          <Text
-            component="a"
-            className={classes.linkText}
-            onClick={() => navigate('/forgot-password')}
-          >
-            パスワードをリセット
-          </Text>
-        </Text>
-      </Paper>
-    </div>
+              <Text ta="center" mt="md">
+                パスワードを忘れた場合{' '}
+                <Text
+                  component="a"
+                  className={classes.linkText}
+                  onClick={() => navigate('/forgot-password')}
+                >
+                  パスワードをリセット
+                </Text>
+              </Text>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                color="red"
+                onClick={handleGoogleLogin}
+                fullWidth
+                mt="xl"
+                size="md"
+              >
+                Googleアカウントでサインイン
+              </Button>
+            </>
+          )}
+        </Paper>
+      </div>
+    </Container>
   );
 }

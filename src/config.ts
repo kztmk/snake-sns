@@ -1,1 +1,1 @@
-export const APP_DEFAULT_PATH = '/home';
+export const APP_DEFAULT_PATH = '/dashboard';

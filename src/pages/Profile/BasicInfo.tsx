@@ -7,6 +7,7 @@ import {
   Center,
   Group,
   LoadingOverlay,
+  Modal,
   Paper,
   rem,
   Stack,
@@ -21,10 +22,13 @@ import { useForm } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import AvatarDropzone from '@/components/DropZone/AvatarDropzone';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
-import { setProfile } from '@/store/reducers/authSlice';
+import { setProfile } from '@/store/reducers/auth';
+import sysAnnouncementColumns from './systemAnnouncements/sysAnnouncementsTable/sysAnnouncementsColumns';
+import SystemAnnouncementTable from './systemAnnouncements/sysAnnouncementsTable/sysAnnouncementsTable';
 
 function BasicInfo() {
   const [avatarFile, setAvatarFile] = useState<FileWithPath | null>(null);
+  const [openSysAnnouncement, setSysAnnouncement] = useState(false);
   const { loading, user, error, task } = useAppSelector((state) => state.auth);
   const { displayName, role, avatarUrl } = user || {};
 
@@ -70,57 +74,80 @@ function BasicInfo() {
     );
   };
 
-  return (
-    <Paper shadow="sm" p="lg" radius="md" withBorder>
-      <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ radius: 'sm', blur: 2 }} />
-      <Stack>
-        <Title order={4}>基本情報</Title>
+  const handleCloseSysAnnouncement = () => {
+    setSysAnnouncement(false);
+  };
 
-        <Center>
-          <Stack align="center">
-            <form onSubmit={form.onSubmit(onSubmit)}>
-              <Stack align="center">
-                <Title order={5} mt="md">
-                  アバター
-                </Title>
-                <AvatarDropzone
-                  onFilesSelected={(files: File[]) => setAvatarFile(files[0])}
-                  {...(avatarUrl ? { defaultUrl: avatarUrl } : {})}
-                />
-              </Stack>
-              <Group mt="xs">
-                <Box style={{ textAlign: 'left' }}>
-                  <TextInput
-                    label="肩書き"
-                    placeholder="肩書き"
-                    withAsterisk
-                    {...form.getInputProps('role')}
-                    key={form.key('role')}
-                    mb="md"
-                    w="100%"
+  return (
+    <>
+      <Paper shadow="sm" p="lg" radius="md" withBorder>
+        <LoadingOverlay visible={loading} zIndex={1000} overlayProps={{ radius: 'sm', blur: 2 }} />
+        <Stack>
+          <Title order={4}>基本情報</Title>
+
+          <Center>
+            <Stack align="center">
+              <form onSubmit={form.onSubmit(onSubmit)}>
+                <Stack align="center">
+                  <Title order={5} mt="md">
+                    アバター
+                  </Title>
+                  <AvatarDropzone
+                    onFilesSelected={(files: File[]) => setAvatarFile(files[0])}
+                    {...(avatarUrl ? { defaultUrl: avatarUrl } : {})}
                   />
-                </Box>
-                <Box style={{ textAlign: 'left' }}>
-                  <TextInput
-                    label="表示名"
-                    placeholder="表示名"
-                    withAsterisk
-                    {...form.getInputProps('displayName')}
-                    key={form.key('displayName')}
-                    mb="md"
-                    w="100%"
-                  />
-                </Box>
-              </Group>
-              {/* System Announcements Button - added as per image, though functionality isn't specified */}
-              <Button type="submit" mt="sm">
-                保存
-              </Button>
-            </form>
-          </Stack>
-        </Center>
-      </Stack>
-    </Paper>
+                </Stack>
+                <Group mt="xs">
+                  <Box style={{ textAlign: 'left' }}>
+                    <TextInput
+                      label="肩書き"
+                      placeholder="肩書き"
+                      withAsterisk
+                      {...form.getInputProps('role')}
+                      key={form.key('role')}
+                      mb="md"
+                      w="100%"
+                    />
+                  </Box>
+                  <Box style={{ textAlign: 'left' }}>
+                    <TextInput
+                      label="表示名"
+                      placeholder="表示名"
+                      withAsterisk
+                      {...form.getInputProps('displayName')}
+                      key={form.key('displayName')}
+                      mb="md"
+                      w="100%"
+                    />
+                  </Box>
+                </Group>
+                {/* System Announcements Button - added as per image, though functionality isn't specified */}
+                <Button type="submit" mt="sm">
+                  保存
+                </Button>
+                {role === 'admin1114inazuma' && (
+                  <Button
+                    variant="outline"
+                    color="blue"
+                    mt="sm"
+                    onClick={() => setSysAnnouncement(true)}
+                  >
+                    システムアナウンスメント
+                  </Button>
+                )}
+              </form>
+            </Stack>
+          </Center>
+        </Stack>
+      </Paper>
+      <Modal
+        opened={openSysAnnouncement}
+        onClose={handleCloseSysAnnouncement}
+        title="System Announcements"
+      >
+        <SystemAnnouncementTable />
+      </Modal>
+    </>
   );
 }
 

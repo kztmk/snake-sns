@@ -144,12 +144,14 @@ const ThreadPosts: React.FC<ThreadPostsProps> = (props) => {
             作成
           </Button>
         </Group>
-        <VerticalTimeline>
+        <VerticalTimeline lineColor="#5474b4">
           {xPosts.map((post) => (
             <VerticalTimelineElement
               id={post.id || ''}
               key={post.id}
               className="vertical-timeline-element--work"
+              contentStyle={{ background: 'rgb(235,232,219)', color: '#3d0301' }}
+              contentArrowStyle={{ borderRight: '7px solid  #ebe8db' }}
               date={post.postSchedule}
               icon={<IconBrandX />}
               onDelete={() => handleDeleteClick(post.id || '')}

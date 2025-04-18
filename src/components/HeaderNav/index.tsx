@@ -1,21 +1,4 @@
 import {
-  ActionIcon,
-  Avatar,
-  Burger,
-  Flex,
-  Group,
-  Indicator,
-  Menu,
-  Stack,
-  Text,
-  TextInput,
-  Tooltip,
-  rem,
-  useMantineColorScheme,
-  useMantineTheme,
-} from '@mantine/core';
-import { useMediaQuery } from '@mantine/hooks';
-import {
   IconBell,
   IconCircleHalf2,
   IconMessageCircle,
@@ -23,10 +6,31 @@ import {
   IconPower,
   IconSearch,
   IconSunHigh,
+  IconX,
 } from '@tabler/icons-react';
-
-import { SidebarState } from '@/layouts/MainLayout/Sidebar/SidebarState';
+import { useNavigate } from 'react-router';
+import {
+  ActionIcon,
+  Avatar,
+  Burger,
+  Flex,
+  Group,
+  Indicator,
+  Menu,
+  rem,
+  Stack,
+  Text,
+  TextInput,
+  Tooltip,
+  useMantineColorScheme,
+  useMantineTheme,
+} from '@mantine/core';
+import { useMediaQuery } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
 import LanguagePicker from '@/components/LanguagePicker';
+import { useAppDispatch } from '@/hooks/rtkhooks';
+import { SidebarState } from '@/layouts/MainLayout/Sidebar/AppsLayout';
+import { signOut } from '@/store/reducers/auth';
 
 const ICON_SIZE = 20;
 
@@ -71,8 +75,7 @@ const NOTIFICATIONS = [
   {
     id: '64ee7341-f2a8-42f2-b379-48f523811d49',
     title: 'Heathcote-Flatley',
-    message:
-      'Vivamus vel nulla eget eros elementum pellentesque. Quisque porta volutpat erat.',
+    message: 'Vivamus vel nulla eget eros elementum pellentesque. Quisque porta volutpat erat.',
     icon: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAABGdBTUEAAK/INwWK6QAAABl0RVh0U29mdHdhcmUAQWRvYmUgSW1hZ2VSZWFkeXHJZTwAAAJoSURBVDjLhZJZTxNhFIbnRq/9E/4Rf4JRE+PChV4YYjQxLglRQkgDWhGXRo2VNJWu0IWh0hY6iEvpjl1AWuoImqFCO6V0uqRrzOt8H0mxBvQkTyYnOfOcd775mPn5+WMcx12dm5v74Ha7806ns+JwOOIsyyptNttxAMy/YDwejz6ZTKJQKKDZbKLdbkOSJKTTaVgslrX/CmZnZwu1Wg3VarUjID3BbDZD5d7GE+cWRhwZ3J8SoLD+wMDEOu4ZvqFP9zXMuFyuXLlcphszmQwEQUAwGESpVILBYEC13j6Um9pUg5mZmck2Gg3wPI9isYh4PE4hNT4+DlXkIUZDw3jgH4TC24+Bj324u3CbCq6//gJmenqaClZXV6kgEolQSGk0GhxWRND7MgHGbrdTQSKRwM7ODnw+H/x+Px1Sq9UwenMHQgstyleVVEwVqtVarVaSKVS9PvD4TBisRgVqFSqzkZrINuVIF+qo+dxBMyEXCSyKIr095EDJUmI6OlzNeyhHFgZIiBPNpiFcymLje0yziqDYIxG41GdTtc7pp/CpMWCMa0eJpMJYyYXKpXKoQn4nyWcHvLvXQatVntEaV0Dv7GJCW4Ztk882MAm3i6JFHdUpAKaQk5gl1kTJJwaWty/UYOT31GsNOkwKS6e79roiYko19qdngh6HgX3Bf3mdSrwyC9yf/EukYfzs9gFEZxX+vcFffo0dmXBwvLe5vcr3QlsAbGrpwlG/hDcepNCodyAKNWxVahBEKvySVfAZ0p0+CAuKH2/OoIbmuTitVcr1SsvErj0LIqLoxGcU4ZwZjiAkwrvgZy4w7G/AXhUV4qmXai6AAAAAElFTkSuQmCC',
   },
   {
@@ -138,6 +141,23 @@ const HeaderNav = (props: HeaderNavProps) => {
   const tablet_match = useMediaQuery('(max-width: 768px)');
   const mobile_match = useMediaQuery('(max-width: 425px)');
 
+  const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+
+  const handleSingOut = async () => {
+    try {
+      await dispatch(signOut());
+      navigate('/', { replace: true });
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to sign out',
+        color: 'red',
+        icon: <IconX size={rem(16)} />,
+      });
+    }
+  };
+
   const messages = MESSAGES.map((m) => (
     <Menu.Item
       key={m.id}
@@ -170,7 +190,7 @@ const HeaderNav = (props: HeaderNavProps) => {
     </Menu.Item>
   ));
 
-  const notifications = NOTIFICATIONS.slice(0, 3).map((n) => (
+  const sysNotifications = NOTIFICATIONS.slice(0, 3).map((n) => (
     <Menu.Item
       key={n.id}
       style={{
@@ -199,12 +219,7 @@ const HeaderNav = (props: HeaderNavProps) => {
         <Tooltip label="Toggle side navigation">
           <Burger visibleFrom="md" size="sm" onClick={onSidebarStateChange} />
         </Tooltip>
-        <Burger
-          opened={mobileOpened}
-          onClick={toggleMobile}
-          hiddenFrom="md"
-          size="sm"
-        />
+        <Burger opened={mobileOpened} onClick={toggleMobile} hiddenFrom="md" size="sm" />
         {/*<Burger opened={desktopOpened} onClick={toggleDesktop} visibleFrom="md" size="sm"/>*/}
         {!mobile_match && (
           <TextInput
@@ -256,14 +271,14 @@ const HeaderNav = (props: HeaderNavProps) => {
             <Menu.Label tt="uppercase" ta="center" fw={600}>
               {NOTIFICATIONS.length} new notifications
             </Menu.Label>
-            {notifications}
+            {sysNotifications}
             <Menu.Item tt="uppercase" ta="center" fw={600}>
               Show all notifications
             </Menu.Item>
           </Menu.Dropdown>
         </Menu>
         <Tooltip label="Logout">
-          <ActionIcon>
+          <ActionIcon onClick={handleSingOut}>
             <IconPower size={ICON_SIZE} />
           </ActionIcon>
         </Tooltip>

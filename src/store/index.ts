@@ -6,6 +6,7 @@ import { combineReducers, configureStore } from '@reduxjs/toolkit';
 import apiController from './reducers/apiControllerSlice';
 import auth from './reducers/auth';
 import googleAccessTokenState from './reducers/googleAccessTokenSlice';
+import systemAnnouncements from './reducers/systemAnnouncementSlice';
 import xAccounts from './reducers/xAccountsSlice';
 import xErrors from './reducers/xErrorsSlice';
 import xPosted from './reducers/xPostedSlice';
@@ -26,6 +27,7 @@ const rootReducer = combineReducers({
   xErrors,
   apiController,
   googleAccessTokenState,
+  systemAnnouncements,
 });
 export type RootState = ReturnType<typeof rootReducer>;
 

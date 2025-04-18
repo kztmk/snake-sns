@@ -1,7 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import type { Meta, StoryObj } from '@storybook/react';
 import { Provider } from 'react-redux';
-import authReducer from '@/store/reducers/authSlice';
+import authReducer from '@/store/reducers/auth';
 import ApiKeySettings from './ApiKeys';
 
 // カスタムのStoryコンテキスト型を定義

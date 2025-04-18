@@ -1,11 +1,20 @@
 import { useMemo, useRef, useState } from 'react';
-import { IconAlertTriangle, IconClipboard, IconId, IconUser } from '@tabler/icons-react';
+import {
+  IconAlertTriangle,
+  IconArchive, // IconArchive をインポート
+  IconCheck,
+  IconClipboard,
+  IconId,
+  IconUser,
+  IconX,
+} from '@tabler/icons-react';
 import { MantineReactTable, MRT_ColumnDef } from 'mantine-react-table';
 import { MRT_Localization_JA } from 'mantine-react-table/locales/ja/index.cjs';
 import {
   ActionIcon,
   Badge,
   Box,
+  Button, // Button をインポート
   Code,
   Group,
   Modal,
@@ -16,6 +25,8 @@ import {
 } from '@mantine/core';
 import { useClipboard } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
+import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks'; // useAppDispatch, useAppSelector をインポート
+import { archiveSheet, selectApiStatus } from '@/store/reducers/apiControllerSlice'; // archiveSheet, selectApiStatus をインポート
 import { PostError } from '@/types/xAccounts';
 
 interface ErrorTableProps {
@@ -31,6 +42,40 @@ const ErrorTable = ({ data, isLoading }: ErrorTableProps) => {
   const [modalOpened, setModalOpened] = useState(false);
   const clipboard = useClipboard();
   const errorStackRef = useRef<HTMLDivElement>(null);
+  const dispatch = useAppDispatch(); // dispatch を取得
+  const apiStatus = useAppSelector(selectApiStatus); // APIステータスを取得
+
+  // アーカイブ処理を実行する関数
+  const handleArchive = () => {
+    const now = new Date();
+    // ISO文字列をベースにファイル名に適した形式に変換
+    const timestamp = now
+      .toISOString()
+      .replace('T', '_') // Tを_に
+      .replace(/:/g, '-') // コロンをハイフンに
+      .replace(/\.\d+Z$/, ''); // ミリ秒とZを削除
+    const filename = `Errors_Archive_${timestamp}`;
+    dispatch(archiveSheet({ target: 'errors', filename }))
+      .unwrap() // Promise を取得
+      .then((result) => {
+        // 成功した場合の通知
+        notifications.show({
+          title: 'アーカイブ成功',
+          message: `シート 'Errors' は '${result.newName}' としてアーカイブされました。`,
+          color: 'green',
+          icon: <IconCheck size={16} />,
+        });
+      })
+      .catch((error) => {
+        // 失敗した場合の通知
+        notifications.show({
+          title: 'アーカイブ失敗',
+          message: `シート 'Errors' のアーカイブ中にエラーが発生しました: ${error}`,
+          color: 'red',
+          icon: <IconX size={16} />,
+        });
+      });
+  };
 
   const copyErrorToClipboard = () => {
     if (selectedError) {
@@ -192,6 +237,18 @@ Context: ${selectedError.context || 'N/A'}
         state={{
           isLoading,
         }}
+        // ★★★ カスタムツールバーアクションを追加 ★★★
+        renderTopToolbarCustomActions={() => (
+          <Button
+            leftSection={<IconArchive size={16} />}
+            onClick={handleArchive}
+            loading={apiStatus === 'loading'} // ローディング状態を反映
+            variant="light"
+            color="red" // エラーテーブルなので赤色に
+          >
+            Errorsシートをアーカイブ
+          </Button>
+        )}
       />
 
       {/* エラー詳細モーダル */}

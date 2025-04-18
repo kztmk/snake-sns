@@ -1,6 +1,5 @@
 import { ReactNode } from 'react';
-
-import { MainLayout } from '../';
+import { MainLayout } from '..';
 
 export type SidebarState = 'hidden' | 'mini' | 'full';
 
@@ -9,6 +8,7 @@ type Props = {
 };
 
 function AppsLayout({ children }: Props) {
+  // @ts-ignore
   return <MainLayout>{children}</MainLayout>;
 }
 

@@ -1,10 +1,10 @@
+import { useState } from 'react';
 import type { Meta, StoryObj } from '@storybook/react';
 import { BrowserRouter } from 'react-router';
-import { useState } from 'react';
 import { MantineProvider } from '@mantine/core';
-import Navigation from './index';
-import { SidebarState } from '@/layouts/MainLayout/Sidebar/SidebarState';
+import { SidebarState } from '@/layouts/MainLayout/Sidebar/AppsLayout';
 import { theme } from '@/themes';
+import Navigation from './index';
 
 // メタデータの定義
 const meta = {
@@ -48,7 +48,7 @@ export const Interactive: Story = {
   render: (args) => {
     // eslint-disable-next-line react-hooks/rules-of-hooks
     const [sidebarState, setSidebarState] = useState<SidebarState>('full');
-    
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
         <div style={{ padding: '1rem', background: '#f0f0f0' }}>
@@ -57,7 +57,7 @@ export const Interactive: Story = {
           <p>現在の状態: {sidebarState}</p>
         </div>
         <div style={{ flex: 1, display: 'flex' }}>
-          <Navigation 
+          <Navigation
             {...args}
             sidebarState={sidebarState}
             onSidebarStateChange={setSidebarState}
@@ -70,5 +70,5 @@ export const Interactive: Story = {
         </div>
       </div>
     );
-  }
+  },
 };

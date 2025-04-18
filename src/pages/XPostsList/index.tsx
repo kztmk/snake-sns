@@ -33,6 +33,7 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
 import {
+  createThreadPosts,
   deleteMultiple,
   deleteXPost,
   getXPostsByXAccountId,
@@ -125,6 +126,7 @@ const XPostTable = () => {
         deleteMultiple: '選択したポストを削除中...',
         createMultiple: '複数のポストを作成中...',
         delete: 'ポストを削除中...',
+        createThreadPosts: 'スレッドポストを作成中...',
       };
 
       if (process && loadingMessages[process]) {
@@ -154,6 +156,7 @@ const XPostTable = () => {
             deleteMultiple: '選択したポストが正常に削除されました',
             createMultiple: 'ポストが正常に作成されました',
             delete: 'ポストが正常に削除されました',
+            createThreadPosts: 'スレッドポストが正常に作成されました',
           };
 
           if (successMessages[process]) {
@@ -326,6 +329,7 @@ const XPostTable = () => {
       });
     }
     console.log('handleThreadPosts', threads);
+    dispatch(createThreadPosts({ xAccountId, threads }));
   };
 
   // 投稿スケジュール一括削除
@@ -402,7 +406,12 @@ const XPostTable = () => {
       }
     },
     renderCreateRowModalContent: ({ table, row }) => (
-      <>
+      <Modal
+        opened={true}
+        onClose={() => table.setCreatingRow(null)}
+        closeOnClickOutside={false}
+        title="新規ポスト作成"
+      >
         <XPostForm
           xAccountId={xAccountId}
           row={row}
@@ -410,10 +419,15 @@ const XPostTable = () => {
           table={table}
           feedBack={handleFeedback}
         />
-      </>
+      </Modal>
     ),
     renderEditRowModalContent: ({ table, row }) => (
-      <>
+      <Modal
+        opened={true}
+        onClose={() => table.setEditingRow(null)}
+        closeOnClickOutside={false}
+        title="ポスト編集"
+      >
         <XPostForm
           xAccountId={xAccountId}
           row={row}
@@ -421,7 +435,7 @@ const XPostTable = () => {
           table={table}
           feedBack={handleFeedback}
         />
-      </>
+      </Modal>
     ),
     renderRowActions: ({ row, table }) => (
       <Box style={{ display: 'flex', flexDirection: 'row', gap: '8px' }}>

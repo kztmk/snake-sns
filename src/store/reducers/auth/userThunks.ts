@@ -150,6 +150,9 @@ export const acceptTerms = createAsyncThunk<
   void, // 引数の型
   { state: RootState; rejectValue: string } // thunkApiの型
 >(`${SLICE_NAME}/acceptTerms`, async (_, thunkApi) => {
+  const appMode = import.meta.env.VITE_APP_MODE;
+  const isPending = appMode === 'pending' ? true : false; // 環境変数から取得
+
   const uid = thunkApi.getState().auth.user?.uid;
   if (!uid) {
     console.error('Accept terms failed: User not authenticated.');
@@ -159,6 +162,7 @@ export const acceptTerms = createAsyncThunk<
     const userDocRef = doc(db, 'users', uid);
     await updateDoc(userDocRef, {
       termsAccepted: true,
+      applyMailchimpTag: isPending ? ['torai-preview-subscribed'] : ['torai-subscribed'], // Mailchimp タグを適用するためのフィールド
     });
     console.log(`Terms accepted for user ${uid}.`);
     return { termsAccepted: true };
