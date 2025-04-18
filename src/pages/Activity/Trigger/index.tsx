@@ -12,6 +12,7 @@ import {
   LoadingOverlay,
   NumberInput,
   Paper,
+  Select,
   Stack,
   Switch,
   Text,
@@ -36,6 +37,15 @@ const Trigger = () => {
 
   const [interval, setInterval] = useState<number>(5);
   const dispatch = useAppDispatch();
+
+  // 許可される間隔の選択肢
+  const intervalOptions = [
+    { value: '1', label: '1分' },
+    { value: '5', label: '5分' },
+    { value: '10', label: '10分' },
+    { value: '15', label: '15分' },
+    { value: '30', label: '30分' },
+  ];
 
   // トリガー状態の切り替えハンドラ
   const handleTriggerToggle = async (checked: boolean) => {
@@ -113,13 +123,18 @@ const Trigger = () => {
                   labelPosition="left"
                   style={{ marginTop: '24px' }}
                 />
-                <NumberInput
-                  label="間隔 (分)"
-                  value={interval}
-                  onChange={(value) => setInterval(Number(value))}
-                  min={1}
-                  max={60}
+                <Select
+                  label="間隔"
+                  value={String(interval)} // Select の value は string
+                  onChange={(value) => {
+                    if (value) {
+                      setInterval(Number(value)); // state には number で保存
+                    }
+                  }}
+                  data={intervalOptions}
+                  disabled={triggerStatus?.isTriggerConfigured || status === 'loading'} // トリガー動作中は変更不可にする
                   style={{ width: '120px' }}
+                  allowDeselect={false} // 選択解除を不許可
                 />
               </Group>
             </Box>

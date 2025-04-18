@@ -14,7 +14,7 @@ import {
 import { useForm, zodResolver } from '@mantine/form';
 import { notifications } from '@mantine/notifications';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
-import { updateUserPassword } from '@/store/reducers/authSlice';
+import { updateUserPassword } from '@/store/reducers/auth';
 import {
   isLowercaseChar,
   isNumber,

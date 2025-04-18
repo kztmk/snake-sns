@@ -1,11 +1,10 @@
 import cx from 'clsx';
-import { Button, Container, Overlay, Text, Title } from '@mantine/core';
 import { useNavigate } from 'react-router';
-
+import { Button, Container, Overlay, Text, Title } from '@mantine/core';
 import classes from './Hero.module.css';
 
 export function Hero() {
-  const navigate  = useNavigate();
+  const navigate = useNavigate();
 
   return (
     <div className={classes.wrapper}>
@@ -13,25 +12,30 @@ export function Hero() {
 
       <div className={classes.inner}>
         <Title className={classes.title}>
-          Automated AI code reviews for{' '}
+          究極のX自動投稿ツール{' '}
           <Text component="span" inherit className={classes.highlight}>
-            any stack
+            登場
           </Text>
         </Title>
 
         <Container size={640}>
           <Text size="lg" className={classes.description}>
-            Build more reliable software with AI companion. AI is also trained to detect lazy
-            developers who do nothing and just complain on Twitter.
+            X自動投稿ツール「虎威」は、強力なツールです。
+            <br />
+            使いやすく、直感的なインターフェースで、誰でも簡単に利用できます。
+            <br />
+            さあ、あなたもX自動投稿ツールを使ってみませんか？
           </Text>
         </Container>
 
         <div className={classes.controls}>
-          <Button className={classes.control} variant="white" size="lg" onClick={()=> navigate('/dashboard')}>
-            Get started
-          </Button>
-          <Button className={cx(classes.control, classes.secondaryControl)} size="lg">
-            Live demo
+          <Button
+            className={classes.control}
+            variant="white"
+            size="lg"
+            onClick={() => navigate('/dashboard')}
+          >
+            はじめる
           </Button>
         </div>
       </div>

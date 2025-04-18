@@ -114,9 +114,6 @@ const XAccountForm: React.FC<XAccountFormProps> = (props) => {
 
   return (
     <Card shadow="sm" padding="lg" radius="md" withBorder>
-      <Card.Section withBorder py="xs" px="md" mb="md">
-        <Text fw={500}>Xアカウント{row ? '編集' : '作成'}</Text>
-      </Card.Section>
       <Box mx="auto" w="100%">
         <form onSubmit={form.onSubmit(handleSubmit)} style={{ width: '100%' }}>
           <TextInput

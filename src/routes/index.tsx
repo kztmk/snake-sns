@@ -190,11 +190,3 @@ const ThemeRoutes = () => {
 };
 
 export default ThemeRoutes;
-
-// --- SignInRoutes.tsx と MainRoutes.tsx から loader 関数をエクスポートする必要がある ---
-// 例: src/routes/SignInRoutes.tsx の末尾に追記
-// export { guestLoader };
-
-// 例: src/routes/MainRoutes.tsx の末尾に追記
-// export { protectedLoader };
-// または、loader関数をこの index.tsx に直接定義するか、別のヘルパーファイルにまとめても良い

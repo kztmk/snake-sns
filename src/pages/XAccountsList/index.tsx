@@ -49,7 +49,6 @@ const XAccountsListTable = () => {
     useDisclosure(false);
 
   // 現在操作中の行と編集・削除対象のアカウント
-  const [currentRow, setCurrentRow] = useState<MRT_Row<XAccount> | null>(null);
   const [currentAccount, setCurrentAccount] = useState<XAccount | null>(null);
 
   // ページ読み込み時にXアカウントデータを取得
@@ -142,7 +141,6 @@ const XAccountsListTable = () => {
         <Tooltip label="編集">
           <ActionIcon
             onClick={() => {
-              setCurrentRow(row);
               setCurrentAccount(row.original);
               table.setEditingRow(row);
             }}
@@ -226,24 +224,38 @@ const XAccountsListTable = () => {
       </Button>
     ),
     renderCreateRowModalContent: ({ table, row }) => (
-      <Paper shadow="xs">
-        <XAccountForm
-          row={null as any}
-          table={table}
-          accountData={emptyAccount}
-          feedBack={handleFeedback}
-        />
-      </Paper>
+      <Modal
+        opened={true}
+        onClose={() => table.setCreatingRow(null)}
+        closeOnClickOutside={false}
+        title="新規アカウント作成"
+      >
+        <Paper shadow="xs">
+          <XAccountForm
+            row={null as any}
+            table={table}
+            accountData={emptyAccount}
+            feedBack={handleFeedback}
+          />
+        </Paper>
+      </Modal>
     ),
     renderEditRowModalContent: ({ table, row }) => (
-      <Paper shadow="xs">
-        <XAccountForm
-          row={row}
-          table={table}
-          accountData={currentAccount as XAccount}
-          feedBack={handleFeedback}
-        />
-      </Paper>
+      <Modal
+        opened={true}
+        onClose={() => table.setEditingRow(null)}
+        closeOnClickOutside={false}
+        title="アカウント編集"
+      >
+        <Paper shadow="xs">
+          <XAccountForm
+            row={row}
+            table={table}
+            accountData={currentAccount as XAccount}
+            feedBack={handleFeedback}
+          />
+        </Paper>
+      </Modal>
     ),
     renderToolbarInternalActions: ({ table }) => (
       <Box style={{ display: 'flex', gap: '8px' }}>

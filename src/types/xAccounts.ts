@@ -48,7 +48,7 @@ export type XPostedDataType = {
   contents?: string;
   media?: string;
   inReplyToInternal?: string;
-  postedId?: string;
+  postId?: string;
   inReplyToOnX?: string;
   postedAt: string;
 };

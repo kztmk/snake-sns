@@ -274,8 +274,18 @@ export const archiveSheet = createAsyncThunk(
       };
 
       const response = await axios.post(
-        `${restUrl}?action=archive&target=${params.target}`,
-        requestData
+        PROXY_ENDPOINT,
+        { filename: params.filename },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Target-Gas-Url': restUrl,
+          },
+          params: {
+            action: 'archive',
+            target: params.target,
+          },
+        }
       );
 
       // レスポンスのステータスをチェック

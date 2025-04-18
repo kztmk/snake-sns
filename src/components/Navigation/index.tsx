@@ -13,6 +13,7 @@ import {
   IconFileInvoice,
   IconFiles,
   IconLayersSubtract,
+  IconLicense,
   IconLifebuoy,
   IconList,
   IconListDetails,
@@ -33,7 +34,7 @@ import { Logo } from '@/components';
 import { LinksGroup } from '@/components/Navigation/Links/';
 import UserProfileButton from '@/components/UserProfileButton';
 import { useAppDispatch, useAppSelector } from '@/hooks/rtkhooks';
-import { SidebarState } from '@/layouts/MainLayout/Sidebar/SidebarState';
+import { SidebarState } from '@/layouts/MainLayout/Sidebar/AppsLayout';
 import { XAccount } from '@/types/xAccounts';
 import UserProfileData from '../data/UserProfile.json';
 import classes from './Navigation.module.css';
@@ -76,9 +77,9 @@ const docsMenu = [
         link: '#',
       },
       {
-        label: '',
-        icon: IconLifebuoy,
-        link: '#',
+        label: '利用規約',
+        icon: IconLicense,
+        link: '/terms',
       },
       {
         label: 'マニュアル',
